@@ -3,6 +3,7 @@ import "../components/iso/iso.css";
 import "./globals.css";
 import "./hub.css";
 import "./connections.css";
+import "./connection-guide.css";
 export const metadata: Metadata = {
   title: "Systems Lab · Hub de estudos de backend",
   description:

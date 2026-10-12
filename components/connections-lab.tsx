@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -19,6 +25,7 @@ import {
   Zap,
 } from "lucide-react";
 import { HubNav } from "./hub-nav";
+import { ConnectionGuide } from "./connection-guide";
 import {
   connectionModes,
   createConnection,
@@ -228,6 +235,9 @@ export function ConnectionsLab({ art }: { art: ReactNode }) {
             <Server size={13} /> Backend
           </span>
         </div>
+        <a href="#guia" className="guide-intro-link">
+          Quando usar cada um? Leia o guia de decisão <ArrowRight size={13} />
+        </a>
       </section>
       <section className="connection-walk" aria-labelledby="walk-title">
         <div className="connection-section-bar">
@@ -557,13 +567,13 @@ function ConnectionComparison() {
     read();
     wakeRef.current();
   }
-  function select(next: ConnectionMode) {
+  const select = useCallback((next: ConnectionMode) => {
     state.current = createConnection(next);
     setMode(next);
     setPaused(matchMedia("(prefers-reduced-motion: reduce)").matches);
     drawRef.current();
     read();
-  }
+  }, []);
   useEffect(() => {
     let raf = 0,
       last = 0,
@@ -1014,6 +1024,7 @@ function ConnectionComparison() {
         mantenha o stream; WebSocket requer um servidor que suporte esse
         protocolo.
       </div>
+      <ConnectionGuide mode={mode} onSelect={select} />
     </section>
   );
 }
