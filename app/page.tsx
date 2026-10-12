@@ -19,26 +19,26 @@ export default function Page() {
     {
       icon: Database,
       title: "Banco de dados",
-      description: "Transações, índices e concorrência.",
-      number: "03",
+      description: "Transações, índices e modelagem.",
+      number: "04",
     },
     {
       icon: Layers3,
       title: "Cache",
       description: "Hit, miss, TTL e invalidação.",
-      number: "04",
+      number: "05",
     },
     {
       icon: ShieldCheck,
       title: "Segurança",
       description: "Identidade, permissões e confiança.",
-      number: "05",
+      number: "06",
     },
     {
       icon: Activity,
       title: "Sistemas distribuídos",
       description: "Escala, falhas e observabilidade.",
-      number: "06",
+      number: "07",
     },
   ];
   return (
@@ -107,7 +107,7 @@ export default function Page() {
             <span className="hub-eyebrow">ESCOLHA UM EXPERIMENTO</span>
             <h2>Seu próximo conceito, na prática.</h2>
           </div>
-          <span className="hub-count">03 LABORATÓRIOS ATIVOS</span>
+          <span className="hub-count">04 LABORATÓRIOS ATIVOS</span>
         </div>
         <div className="hub-lab-grid">
           <Link
@@ -169,6 +169,31 @@ export default function Page() {
             </div>
             <div className="hub-card-bottom">
               <span>Máquina de mensagens</span>
+              <span>
+                Abrir laboratório <ArrowRight size={15} />
+              </span>
+            </div>
+          </Link>
+          <Link
+            href="/labs/concurrency"
+            className="hub-lab-card concurrency-card"
+          >
+            <div className="hub-card-top">
+              <Database size={24} />
+              <span>03 / ESTADO COMPARTILHADO</span>
+            </div>
+            <h3>Concorrência</h3>
+            <p>
+              Dois workers, uma pendência. Observe a disputa e proteja a
+              reserva.
+            </p>
+            <div className="hub-tags">
+              <span>Race condition</span>
+              <span>Reserva atômica</span>
+              <span>Idempotência</span>
+            </div>
+            <div className="hub-card-bottom">
+              <span>3 experimentos para comparar</span>
               <span>
                 Abrir laboratório <ArrowRight size={15} />
               </span>

@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "node scripts/serve.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test lib/model.test.ts lib/http-model.test.ts lib/connections-model.test.ts",
+    "test": "tsx --test lib/model.test.ts lib/http-model.test.ts lib/connections-model.test.ts lib/concurrency-model.test.ts",
     "geometry": "tsx scripts/geometry-audit.mjs",
     "geometry:http": "tsx scripts/http-geometry-audit.mjs",
-    "docs:connections": "tsx scripts/export-connection-guide.mjs"
+    "docs:connections": "tsx scripts/export-connection-guide.mjs",
+    "geometry:concurrency": "tsx scripts/concurrency-geometry-audit.mjs"
   },
   "dependencies": {
     "lucide-react": "1.55.0",
