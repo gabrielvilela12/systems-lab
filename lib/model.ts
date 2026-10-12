@@ -1,6 +1,23 @@
 export type Stage = "publish" | "ready" | "delivery" | "retry" | "dead";
+export const messageTypes = [
+  { id: 0, name: "Pedidos", key: "orders.created", queue: "orders.work" },
+  {
+    id: 1,
+    name: "Pagamentos",
+    key: "payments.received",
+    queue: "payments.work",
+  },
+  {
+    id: 2,
+    name: "Notificações",
+    key: "notifications.send",
+    queue: "notifications.work",
+  },
+] as const;
+export type MessageType = 0 | 1 | 2;
 export type Message = {
   id: number;
+  type: MessageType;
   attempt: number;
   stage: Stage;
   since: number;
@@ -22,6 +39,10 @@ export type Config = {
   failure: number;
   maxRetries: number;
   retry: boolean;
+  publishType: MessageType | "mix";
+  weights: number[];
+  colors: string[];
+  subscriptions: MessageType[][];
 };
 export const defaults: Config = {
   rate: 3,
@@ -31,6 +52,14 @@ export const defaults: Config = {
   failure: 0,
   maxRetries: 2,
   retry: true,
+  publishType: "mix",
+  weights: [1, 1, 1],
+  colors: ["#f5a45d", "#8d9bfa", "#5acbb3"],
+  subscriptions: [
+    [0, 1, 2],
+    [0, 1, 2],
+    [0, 1, 2],
+  ],
 };
 export type Simulation = {
   time: number;
@@ -76,10 +105,16 @@ export function log(s: Simulation, kind: Event["kind"], text: string) {
   s.events.unshift({ id: s.nextEvent++, at: s.time, kind, text });
   s.events.length = Math.min(s.events.length, 35);
 }
-export function publish(s: Simulation, count = 1, poison = false) {
+export function publish(
+  s: Simulation,
+  count = 1,
+  poison = false,
+  type: MessageType = 0,
+) {
   for (let n = 0; n < count; n++) {
     s.messages.push({
       id: s.nextId++,
+      type,
       attempt: 0,
       stage: "publish",
       since: s.time,
@@ -92,8 +127,31 @@ export function publish(s: Simulation, count = 1, poison = false) {
   log(
     s,
     "PUBLISH",
-    `${count === 1 ? `#${s.nextId - 1}` : `${count} messages`} → orders.created${poison ? " · invalid payload" : ""}`,
+    `${count === 1 ? `#${s.nextId - 1}` : `${count} messages`} → ${messageTypes[type].key}${poison ? " · invalid payload" : ""}`,
   );
+}
+export function publishConfigured(
+  s: Simulation,
+  c: Config,
+  count = 1,
+  poison = false,
+) {
+  if (c.publishType !== "mix") {
+    publish(s, count, poison, c.publishType);
+    return;
+  }
+  const total = c.weights.reduce((a, b) => a + b, 0);
+  if (!total) return;
+  for (let n = 0; n < count; n++) {
+    let pick = random(s) * total;
+    for (const t of messageTypes) {
+      pick -= c.weights[t.id];
+      if (pick < 0) {
+        publish(s, 1, poison, t.id);
+        break;
+      }
+    }
+  }
 }
 function random(s: Simulation) {
   s.random = (Math.imul(s.random, 1664525) + 1013904223) >>> 0;
@@ -155,14 +213,18 @@ export function step(s: Simulation, c: Config, dt: number) {
     const count = Math.floor(s.fraction);
     if (count) {
       s.fraction -= count;
-      publish(s, count);
+      publishConfigured(s, c, count);
     }
   }
   for (const m of s.messages) {
     if (m.stage === "publish" && s.time - m.since >= 1.2) {
       m.stage = "ready";
       m.since = s.time;
-      log(s, "ROUTE", `#${m.id} · direct binding → orders.work`);
+      log(
+        s,
+        "ROUTE",
+        `#${m.id} · ${messageTypes[m.type].key} → ${messageTypes[m.type].queue}`,
+      );
     }
     if (m.stage === "retry" && s.time - m.since >= 1.1) {
       m.stage = "ready";
@@ -212,7 +274,11 @@ export function step(s: Simulation, c: Config, dt: number) {
     } else {
       s.acked++;
       s.ackTimes.push(s.time);
-      log(s, "ACK", `#${head.id} · C${i + 1} processed · removed from queue`);
+      log(
+        s,
+        "ACK",
+        `#${head.id} · ${messageTypes[head.type].name} · C${i + 1} processed`,
+      );
       s.messages.splice(s.messages.indexOf(head), 1);
     }
   }
@@ -220,6 +286,9 @@ export function step(s: Simulation, c: Config, dt: number) {
     if (m.stage !== "ready" || s.time - m.since < 0.65) continue;
     for (let offset = 0; offset < c.consumers; offset++) {
       const i = (s.cursor + offset) % c.consumers;
+      // Each type has a direct binding to its own logical queue. Workers
+      // compete only on queues they subscribe to; this is not payload filtering.
+      if (!c.subscriptions[i].includes(m.type)) continue;
       const load = s.messages.filter(
         (x) => x.stage === "delivery" && x.consumer === i,
       ).length;
@@ -229,7 +298,11 @@ export function step(s: Simulation, c: Config, dt: number) {
         m.since = s.time;
         m.progress = 0;
         s.cursor = (i + 1) % c.consumers;
-        log(s, "DELIVER", `#${m.id} → C${i + 1} · awaiting ACK`);
+        log(
+          s,
+          "DELIVER",
+          `#${m.id} · ${messageTypes[m.type].name} → C${i + 1} · awaiting ACK`,
+        );
         break;
       }
     }

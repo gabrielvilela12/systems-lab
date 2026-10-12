@@ -4,6 +4,7 @@ import {
   createSimulation,
   defaults,
   publish,
+  publishConfigured,
   step,
   metrics,
   crashConsumer,
@@ -82,4 +83,64 @@ test("redrive preserves invalid payload and resets application retry counter", (
   assert.equal(metrics(s).dead, 0);
   assert.equal(s.messages[0].poison, true);
   assert.equal(s.messages[0].attempt, 0);
+});
+test("type-specific queues dispatch only to subscribed consumers", () => {
+  const c: Config = {
+    ...defaults,
+    rate: 0,
+    consumers: 3,
+    processing: 10,
+    subscriptions: [[0], [1], [2]],
+  };
+  const s = createSimulation();
+  for (const t of [0, 1, 2] as const) publish(s, 4, false, t);
+  run(c, 3, s);
+  const delivered = s.messages.filter((m) => m.stage === "delivery");
+  assert.equal(delivered.length, 9);
+  assert.ok(delivered.every((m) => m.consumer === m.type));
+});
+test("unsubscribed type accumulates without blocking another logical queue", () => {
+  const c: Config = { ...defaults, rate: 0, subscriptions: [[0], [0], []] };
+  const s = createSimulation();
+  publish(s, 8, false, 1);
+  publish(s, 4, false, 0);
+  run(c, 10, s);
+  assert.equal(s.acked, 4);
+  assert.equal(metrics(s).ready, 8);
+  assert.equal(s.nacked, 0);
+  run({ ...c, subscriptions: [[1], [1], []] }, 10, s);
+  assert.equal(s.acked, 12);
+});
+test("producer weights exclude disabled types and empty mix publishes nothing", () => {
+  const s = createSimulation();
+  const c: Config = { ...defaults, weights: [0, 1, 0] };
+  publishConfigured(s, c, 20);
+  assert.ok(s.messages.every((m) => m.type === 1));
+  publishConfigured(s, { ...c, weights: [0, 0, 0] }, 10);
+  assert.equal(s.published, 20);
+  publishConfigured(s, { ...c, publishType: 2, weights: [0, 0, 0] }, 3);
+  assert.equal(s.messages.filter((m) => m.type === 2).length, 3);
+});
+test("subscription changes finish assigned work but stop future deliveries", () => {
+  const s = createSimulation();
+  publish(s, 3, false, 2);
+  const c: Config = { ...defaults, rate: 0, consumers: 1, prefetch: 1 };
+  run(c, 2, s);
+  assert.equal(metrics(s).unacked, 1);
+  run({ ...c, subscriptions: [[], [], []] }, 8, s);
+  assert.equal(s.acked, 1);
+  assert.equal(metrics(s).ready, 2);
+});
+test("retry and redrive preserve message type and its queue", () => {
+  const s = createSimulation();
+  publish(s, 1, true, 2);
+  const c: Config = { ...defaults, rate: 0, subscriptions: [[0], [2], []] };
+  run(c, 15, s);
+  assert.equal(s.messages[0].type, 2);
+  assert.equal(s.messages[0].consumer, 1);
+  assert.equal(metrics(s).dead, 1);
+  redrive(s);
+  assert.equal(s.messages[0].type, 2);
+  run(c, 15, s);
+  assert.equal(metrics(s).dead, 1);
 });

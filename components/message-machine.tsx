@@ -29,7 +29,9 @@ import {
   createSimulation,
   defaults,
   step,
-  publish,
+  publishConfigured,
+  messageTypes,
+  type MessageType,
   metrics,
   log,
   redrive,
@@ -53,7 +55,7 @@ const topics = {
     name: "Producer",
     number: "01",
     title: "Publish once. Let the broker take it from here.",
-    text: "The feeder publishes orders.created to a direct exchange. A producer chooses a routing key, not a consumer. Every cartridge is one logical message.",
+    text: "Choose the message type or a weighted mix. Each color identifies a routing key. The producer publishes to the direct exchange; queue bindings determine where messages wait.",
     code: "exchange.publish('orders.created', payload)",
     foot: "Publisher confirms acknowledge broker acceptance; the green ACK signal here comes from consumers.",
   },
@@ -61,9 +63,9 @@ const topics = {
     name: "Exchange",
     number: "02",
     title: "The exchange routes. The queue stores.",
-    text: "The routing turntable matches orders.created to the binding on orders.work. This direct exchange has one matching queue, so each publish creates one queued message.",
-    code: "orders.created → orders.work",
-    foot: "Exchanges can route to multiple matching queues. This machine demonstrates one direct binding.",
+    text: "The turntable matches each routing key to its own queue: orders, payments, or notifications. The accumulator represents these three logical queues together. Each publish creates one queued message.",
+    code: "routing key → matching queue → subscribed worker",
+    foot: "The routing matrix configures queue subscriptions. RabbitMQ does not filter message types inside a shared queue.",
   },
   queue: {
     name: "Queue",
@@ -77,9 +79,9 @@ const topics = {
     name: "Consumer",
     number: "04",
     title: "Competing workers. One delivery at a time.",
-    text: "Workers share orders.work; a message goes to one available consumer. Each worker processes serially and reserves up to its prefetch limit. A larger prefetch adds buffer capacity, not processing parallelism.",
-    code: "basic.qos(prefetch_count, global=false)",
-    foot: "Lowering prefetch keeps existing deliveries; the new limit applies to future dispatch.",
+    text: "Select the queues each worker subscribes to in the routing matrix. Workers sharing a type compete for its messages; each message goes to one available worker. A type with no subscribed active worker waits in its queue.",
+    code: "queue.subscribe(worker) · one delivery, one worker",
+    foot: "This demo caps total unacknowledged work per worker across subscriptions. Routing and prefetch changes apply to future deliveries; work already assigned finishes normally.",
   },
   ack: {
     name: "ACK",
@@ -107,6 +109,12 @@ const topics = {
   },
 };
 type Topic = keyof typeof topics;
+function tint(hex: string, factor: number) {
+  const rgb = [1, 3, 5].map((i) =>
+    Math.round(parseInt(hex.slice(i, i + 2), 16) * factor),
+  );
+  return `rgb(${rgb.join(",")})`;
+}
 function Range({
   label,
   value,
@@ -166,6 +174,12 @@ export function MessageMachine({ art }: { art: ReactNode }) {
       retries: 0,
       time: 0,
       loads: [0, 0, 0],
+      queues: [0, 0, 0],
+      typeLoads: [
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0],
+      ],
       events: createSimulation().events,
       blocked: false,
       failNext: false,
@@ -203,6 +217,20 @@ export function MessageMachine({ art }: { art: ReactNode }) {
           s.messages.filter((m) => m.stage === "delivery" && m.consumer === i)
             .length,
       ),
+      queues: messageTypes.map(
+        (t) =>
+          s.messages.filter((m) => m.type === t.id && m.stage === "ready")
+            .length,
+      ),
+      typeLoads: [0, 1, 2].map((i) =>
+        messageTypes.map(
+          (t) =>
+            s.messages.filter(
+              (m) =>
+                m.type === t.id && m.stage === "delivery" && m.consumer === i,
+            ).length,
+        ),
+      ),
       events: s.events.slice(0, 6),
       blocked: s.blocked,
       failNext: s.failNext,
@@ -210,7 +238,7 @@ export function MessageMachine({ art }: { art: ReactNode }) {
   };
   function reset() {
     simulation.current = createSimulation();
-    publish(simulation.current, 6);
+    publishConfigured(simulation.current, configRef.current, 6);
     seenAck.current = 0;
     pulseAt.current = -10;
     read();
@@ -221,20 +249,26 @@ export function MessageMachine({ art }: { art: ReactNode }) {
     simulation.current = createSimulation();
     seenAck.current = 0;
     pulseAt.current = -10;
-    setConfig(
-      name === "Backpressure"
+    const nextConfig = {
+      ...(name === "Backpressure"
         ? { ...defaults, rate: 12, prefetch: 2 }
         : name === "Failure & retry"
           ? { ...defaults, rate: 2, failure: 35 }
-          : { ...defaults },
-    );
-    publish(simulation.current, 6);
+          : { ...defaults }),
+      publishType: config.publishType,
+      weights: config.weights,
+      colors: config.colors,
+      subscriptions: config.subscriptions,
+    };
+    setConfig(nextConfig);
+    publishConfigured(simulation.current, nextConfig, 6);
     log(simulation.current, "SYSTEM", `${name} scenario started`);
     setTopic(name === "Failure & retry" ? "retry" : "queue");
     read();
   }
   useEffect(() => {
-    if (simulation.current.published === 0) publish(simulation.current, 6);
+    if (simulation.current.published === 0)
+      publishConfigured(simulation.current, configRef.current, 6);
     let frame = 0,
       last = 0,
       visible = true,
@@ -331,6 +365,14 @@ export function MessageMachine({ art }: { art: ReactNode }) {
         node.setAttribute("transform", `translate(${x} ${y})`);
         node.dataset.state = item.m.stage;
         node.dataset.poison = item.m.poison ? "true" : "false";
+        node.dataset.type = String(item.m.type);
+        node.dataset.message = String(item.m.id);
+        node.dataset.consumer = String(item.m.consumer);
+        const color = c.colors[item.m.type];
+        node.style.setProperty("--message-top", color);
+        node.style.setProperty("--message-side", tint(color, 0.7));
+        node.style.setProperty("--message-fill", tint(color, 0.85));
+        node.style.setProperty("--message-edge", tint(color, 0.4));
       }
       const angle = calm.matches ? 0 : s.time * 0.5;
       rotor.current?.setAttribute(
@@ -460,7 +502,17 @@ export function MessageMachine({ art }: { art: ReactNode }) {
   }, []);
   const selected = topics[topic];
   const capacity = config.consumers / config.processing;
-  const isBackingUp = config.rate > capacity;
+  const sourceEmpty =
+    config.publishType === "mix" && !config.weights.some((v) => v > 0);
+  const waitingTypes = messageTypes.filter(
+    (t) =>
+      snap.queues[t.id] > 0 &&
+      !config.subscriptions
+        .slice(0, config.consumers)
+        .some((types) => types.includes(t.id)),
+  );
+  const isBackingUp =
+    (!sourceEmpty && config.rate > capacity) || waitingTypes.length > 0;
   return (
     <main data-theme={light ? "light" : "dark"} className="app-shell">
       <header className="topbar">
@@ -626,10 +678,12 @@ export function MessageMachine({ art }: { art: ReactNode }) {
                 </g>
               </svg>
               <div className="diagram-key">
-                <span>
-                  <i className="orange" />
-                  MESSAGE
-                </span>
+                {messageTypes.map((t) => (
+                  <span key={t.id}>
+                    <i style={{ background: config.colors[t.id] }} />
+                    {t.name.toUpperCase()}
+                  </span>
+                ))}
                 <span>
                   <i className="green" />
                   ACK
@@ -661,7 +715,7 @@ export function MessageMachine({ art }: { art: ReactNode }) {
               <span>
                 <Radio size={13} />
                 direct exchange <span className="dim">·</span>
-                <code>orders.created</code>
+                <code>3 routing keys / 3 queues</code>
               </span>
               <span className="mono" data-readout>
                 {snap.ready} READY <span className="dim">/</span> {snap.unacked}{" "}
@@ -685,7 +739,7 @@ export function MessageMachine({ art }: { art: ReactNode }) {
                   <small>msgs</small>
                 </strong>
                 <span className="metric-detail">
-                  {config.rate} messages / sec
+                  {sourceEmpty ? 0 : config.rate} messages / sec
                 </span>
               </button>
               <button onClick={() => setTopic("queue")}>
@@ -795,10 +849,33 @@ export function MessageMachine({ art }: { art: ReactNode }) {
               suffix=" msg/s"
               onChange={(v) => update("rate", v)}
             />
+            <label className="source-select">
+              <span>Entrada do producer</span>
+              <select
+                aria-label="Entrada do producer"
+                value={config.publishType}
+                onChange={(e) =>
+                  update(
+                    "publishType",
+                    e.target.value === "mix"
+                      ? "mix"
+                      : (Number(e.target.value) as MessageType),
+                  )
+                }
+              >
+                <option value="mix">Mistura configurada abaixo</option>
+                {messageTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} · {t.key}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               className="outline-button"
+              disabled={sourceEmpty}
               onClick={() => {
-                publish(simulation.current, 10);
+                publishConfigured(simulation.current, config, 10);
                 read();
               }}
             >
@@ -864,7 +941,7 @@ export function MessageMachine({ art }: { art: ReactNode }) {
               min={1}
               max={6}
               onChange={(v) => update("prefetch", v)}
-              hint="Maximum unacknowledged deliveries."
+              hint="Shared work budget across this worker’s queue subscriptions."
             />
             <Range
               label="Processing time"
@@ -921,8 +998,9 @@ export function MessageMachine({ art }: { art: ReactNode }) {
             </div>
             <button
               className="text-button"
+              disabled={sourceEmpty}
               onClick={() => {
-                publish(simulation.current, 1, true);
+                publishConfigured(simulation.current, config, 1, true);
                 setTopic("retry");
                 read();
               }}
@@ -942,6 +1020,172 @@ export function MessageMachine({ art }: { art: ReactNode }) {
           messages. Consumers continue draining the queue.
         </div>
       )}
+      <section className="routing-workbench" aria-labelledby="routing-title">
+        <div className="routing-heading">
+          <div>
+            <span className="section-label">
+              <Network size={14} /> ROUTING WORKBENCH
+            </span>
+            <h2 id="routing-title">O que entra. Quem recebe.</h2>
+            <p>Uma cor por tipo. Uma fila por routing key.</p>
+          </div>
+          <button
+            className="outline-button"
+            onClick={() =>
+              setConfig((c) => ({
+                ...c,
+                consumers: 3,
+                subscriptions: [[0], [1], [2]],
+              }))
+            }
+          >
+            Separar por tipo <ArrowRight size={14} />
+          </button>
+        </div>
+        <div className="routing-layout">
+          <div className="producer-mix">
+            <div className="routing-subtitle">
+              01 / MISTURA DO PRODUCER <span>Peso relativo</span>
+            </div>
+            {messageTypes.map((t) => {
+              const total = config.weights.reduce((a, b) => a + b, 0);
+              const share = total
+                ? Math.round((config.weights[t.id] / total) * 100)
+                : 0;
+              return (
+                <div className="type-config" key={t.id}>
+                  <label className="color-picker" title={`Cor de ${t.name}`}>
+                    <input
+                      type="color"
+                      aria-label={`Cor de ${t.name}`}
+                      value={config.colors[t.id]}
+                      onChange={(e) =>
+                        update(
+                          "colors",
+                          config.colors.map((v, i) =>
+                            i === t.id ? e.target.value : v,
+                          ),
+                        )
+                      }
+                    />
+                    <span style={{ background: config.colors[t.id] }} />
+                  </label>
+                  <div>
+                    <strong>{t.name}</strong>
+                    <code>{t.key}</code>
+                  </div>
+                  <label className="weight-control">
+                    <input
+                      type="range"
+                      min="0"
+                      max="10"
+                      value={config.weights[t.id]}
+                      aria-label={`Peso de ${t.name}`}
+                      onChange={(e) =>
+                        update(
+                          "weights",
+                          config.weights.map((v, i) =>
+                            i === t.id ? Number(e.target.value) : v,
+                          ),
+                        )
+                      }
+                    />
+                    <span>
+                      {share}% <small>peso {config.weights[t.id]}</small>
+                    </span>
+                  </label>
+                </div>
+              );
+            })}
+            <p className="routing-note">
+              {sourceEmpty
+                ? "Todos os pesos estão zerados. Escolha um tipo ou aumente um peso para publicar."
+                : config.publishType === "mix"
+                  ? "A taxa total é dividida entre os tipos pelos pesos. Peso zero desliga a entrada desse tipo."
+                  : `Publicando apenas ${messageTypes[config.publishType].name}. Selecione a mistura no producer para usar os pesos.`}
+            </p>
+          </div>
+          <div className="routing-matrix">
+            <div className="routing-subtitle">
+              02 / ASSINATURAS DOS CONSUMERS <span>Marque para receber</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Fila / aguardando</th>
+                  {[0, 1, 2].map((i) => (
+                    <th scope="col" key={i}>
+                      C{i + 1}
+                      <small>{i < config.consumers ? "ATIVO" : "OFF"}</small>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {messageTypes.map((t) => (
+                  <tr key={t.id}>
+                    <th scope="row">
+                      <span
+                        className="type-dot"
+                        style={{ background: config.colors[t.id] }}
+                      />
+                      <span>
+                        {t.name}
+                        <code>{t.queue}</code>
+                      </span>
+                      <b>{snap.queues[t.id]}</b>
+                    </th>
+                    {[0, 1, 2].map((i) => (
+                      <td
+                        key={i}
+                        className={i >= config.consumers ? "consumer-off" : ""}
+                      >
+                        <label
+                          title={`${t.name} → C${i + 1}${i >= config.consumers ? " (consumer desligado)" : ""}`}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label={`C${i + 1} recebe ${t.name}`}
+                            checked={config.subscriptions[i].includes(t.id)}
+                            onChange={() =>
+                              update(
+                                "subscriptions",
+                                config.subscriptions.map((types, j) =>
+                                  j !== i
+                                    ? types
+                                    : types.includes(t.id)
+                                      ? types.filter((v) => v !== t.id)
+                                      : [...types, t.id],
+                                ),
+                              )
+                            }
+                          />
+                          <span
+                            className="routing-check"
+                            style={
+                              {
+                                "--type-color": config.colors[t.id],
+                              } as React.CSSProperties
+                            }
+                          >
+                            <Check size={14} />
+                          </span>
+                          <small>{snap.typeLoads[i][t.id]} em voo</small>
+                        </label>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className={`routing-note ${waitingTypes.length ? "warn" : ""}`}>
+              {waitingTypes.length
+                ? `${waitingTypes.map((t) => t.name).join(", ")}: aguardando um consumer ativo com essa assinatura.`
+                : "Consumers com a mesma assinatura competem pela fila. Cada mensagem vai a um deles; alterações valem para novas entregas."}
+            </p>
+          </div>
+        </div>
+      </section>
       <div className="lower-grid">
         <section className="explanation">
           <div className="explanation-top">
@@ -1066,8 +1310,14 @@ export function MessageMachine({ art }: { art: ReactNode }) {
             <h2 id="help-title">Take the machine for a spin.</h2>
             <ol>
               <li>
-                <strong>Follow a cartridge.</strong> Orange messages move from
+                <strong>Follow a cartridge.</strong> Colored messages move from
                 the feeder through the turntable into a queue and a worker.
+              </li>
+              <li>
+                <strong>Choose the route.</strong> Pick a producer input, adjust
+                the mix and colors, then select which queues each worker
+                receives in the routing workbench. Unsubscribed types
+                accumulate.
               </li>
               <li>
                 <strong>Build a backlog.</strong> Select Backpressure or

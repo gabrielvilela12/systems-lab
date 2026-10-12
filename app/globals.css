@@ -1,4 +1,329 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=IBM+Plex+Mono:wght@400;450;500;600&display=swap");
+.source-select {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 11px;
+  color: var(--soft);
+}
+.source-select select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.routing-workbench {
+  margin: 22px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.routing-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.routing-heading h2 {
+  font-size: 23px;
+  font-weight: 500;
+  letter-spacing: -0.6px;
+  margin: 10px 0 6px;
+}
+.routing-heading p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.routing-heading .outline-button {
+  width: auto;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 10px 13px;
+  gap: 18px;
+}
+.routing-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+}
+.producer-mix,
+.routing-matrix {
+  padding: 23px 24px 18px;
+  min-width: 0;
+}
+.producer-mix {
+  border-right: 1px solid var(--border);
+}
+.routing-subtitle {
+  font:
+    10px "IBM Plex Mono",
+    monospace;
+  color: var(--soft);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 17px;
+}
+.routing-subtitle > span {
+  color: var(--muted);
+  font:
+    11px "DM Sans",
+    sans-serif;
+}
+.type-config {
+  display: grid;
+  grid-template-columns: 30px minmax(140px, 1fr) minmax(105px, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 62px;
+  border-top: 1px solid var(--border);
+}
+.type-config strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.type-config code,
+.routing-matrix code {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 5px;
+}
+.color-picker {
+  width: 28px;
+  height: 28px;
+  position: relative;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px;
+}
+.color-picker input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+.color-picker:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.color-picker span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.weight-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.weight-control input {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.weight-control > span {
+  min-width: 45px;
+  text-align: right;
+  font:
+    12px "IBM Plex Mono",
+    monospace;
+}
+.weight-control small {
+  display: block;
+  margin-top: 5px;
+  font-size: 9px;
+  color: var(--muted);
+}
+.routing-note {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+  min-height: 38px;
+  margin: 15px 0 0;
+}
+.routing-note.warn {
+  color: var(--accent);
+}
+.routing-matrix table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.routing-matrix th:first-child {
+  width: 52%;
+  text-align: left;
+}
+.routing-matrix thead th {
+  font:
+    11px "IBM Plex Mono",
+    monospace;
+  color: var(--soft);
+  padding: 0 0 9px;
+}
+.routing-matrix thead small {
+  display: block;
+  font-size: 8px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.routing-matrix tbody tr {
+  border-top: 1px solid var(--border);
+  height: 62px;
+}
+.routing-matrix tbody th {
+  font-weight: 500;
+  font-size: 12px;
+}
+.routing-matrix tbody th > span {
+  display: inline-block;
+  vertical-align: middle;
+}
+.type-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  margin-right: 9px;
+}
+.routing-matrix tbody th b {
+  float: right;
+  margin: 8px 12px 0 4px;
+  font:
+    12px "IBM Plex Mono",
+    monospace;
+  color: var(--soft);
+}
+.routing-matrix td {
+  text-align: center;
+}
+.routing-matrix td label {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.routing-matrix td input {
+  position: absolute;
+  opacity: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  cursor: pointer;
+}
+.routing-check {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--bg);
+}
+.routing-check svg {
+  opacity: 0;
+}
+.routing-matrix input:checked + .routing-check {
+  background: var(--type-color);
+  border-color: var(--type-color);
+}
+.routing-matrix input:checked + .routing-check svg {
+  opacity: 1;
+}
+.routing-matrix input:focus-visible + .routing-check {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.routing-matrix td small {
+  font:
+    8px "IBM Plex Mono",
+    monospace;
+  color: var(--muted);
+}
+.consumer-off {
+  opacity: 0.4;
+}
+.app-shell .message-cartridge[data-type] .iso-solid[data-lit] > .iso-top {
+  fill: var(--message-top);
+}
+.app-shell .message-cartridge[data-type] .iso-solid[data-lit] > .iso-shade {
+  fill: var(--message-side);
+}
+.app-shell .message-cartridge[data-type] .iso-fill {
+  fill: var(--message-fill);
+}
+.app-shell .message-cartridge[data-type] .iso-edge {
+  stroke: var(--message-edge);
+}
+.app-shell .message-cartridge[data-type][data-state="retry"] .iso-edge,
+.app-shell .message-cartridge[data-type][data-state="dead"] .iso-edge,
+.app-shell .message-cartridge[data-type][data-poison="true"] .iso-edge {
+  stroke: #f27770;
+  stroke-width: 1.5;
+}
+@media (max-width: 1050px) {
+  .routing-layout {
+    grid-template-columns: 1fr;
+  }
+  .producer-mix {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+@media (max-width: 600px) {
+  .routing-heading {
+    padding: 18px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .producer-mix,
+  .routing-matrix {
+    padding: 18px 14px;
+  }
+  .type-config {
+    grid-template-columns: 26px minmax(130px, 1fr) minmax(70px, 1fr);
+    gap: 8px;
+  }
+  .weight-control {
+    flex-direction: column;
+    gap: 3px;
+  }
+  .weight-control > span {
+    font-size: 10px;
+  }
+  .weight-control small {
+    display: inline;
+    margin-left: 4px;
+  }
+  .routing-matrix code {
+    font-size: 8px;
+  }
+  .routing-matrix tbody th b {
+    margin-right: 5px;
+  }
+  .routing-subtitle {
+    font-size: 9px;
+  }
+  .routing-matrix th:first-child {
+    width: 49%;
+  }
+  .diagram-key {
+    flex-wrap: wrap;
+  }
+}
 * {
   box-sizing: border-box;
 }
