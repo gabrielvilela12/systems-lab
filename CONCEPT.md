@@ -1,4 +1,8 @@
-# The message machine
+# Systems Lab
+
+A shared study hub now introduces two runnable laboratories. HTTP uses a workstation, request/response tracks, latency instrument and a three-drawer server rack. Its model owns request snapshots, server-side side effects, client outcomes, phase timing and challenge completion. A timeout ends the client's wait while the server can still process and mutate its data. The diagram is paused by reduced motion and supports manual steps. Future modules are marked as planned and have no pretend navigation.
+
+## The message machine
 
 A cartridge feeder publishes to a geared routing turntable; an accumulator stores ready work; three serial stamping benches reserve messages up to prefetch; successful stamps send ACK, failed stamps return a cartridge or place it in an open dead-letter drawer.
 
