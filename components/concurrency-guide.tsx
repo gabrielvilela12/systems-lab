@@ -123,7 +123,9 @@ COMMIT;
           entre eles é o registro persistido no banco. As setas animadas
           representam chamadas e dados; não existe um envio direto da API para o
           worker. A etapa de cobrança representa uma ação do worker em outra
-          parte do sistema.
+          parte do sistema. Essa parte devolve o resultado ao worker, e o
+          próprio worker grava CONCLUÍDO de volta no banco. O banco não envia a
+          pendência por iniciativa própria: ele responde à consulta do worker.
         </p>
         <p>
           Use “Próxima ação” para ler uma passagem de cada vez. O exemplo usa

@@ -96,7 +96,7 @@ slab(
   trim(CONCURRENCY_BASE, 0) + screws(CONCURRENCY_BASE, 0),
 );
 const ruler = { x: -279, y: 113, w: 558, d: 6, r: 1 };
-const ticks = k.topTicks(-275, 275, 5, 5, 113, 1, [2.5, 4], CP);
+const ticks = k.topTicks(-275, 275, 5, 5, 113, 1, [2.5, 6], CP);
 slab(
   "ruler",
   ruler,
@@ -121,6 +121,12 @@ const lanes = [
   [231, -60, 6, 48],
   [143, 62, 94, 6],
   [231, 43, 6, 19],
+  [148, -108, 6, 42],
+  [-43, -108, 191, 6],
+  [-43, -102, 6, 72],
+  [148, 68, 6, 40],
+  [-43, 102, 191, 6],
+  [-43, 74, 6, 28],
 ];
 for (const [i, [x, y, w, d]] of lanes.entries()) {
   const p = { x, y, w, d, r: 0.7 };
@@ -131,6 +137,7 @@ for (const [i, [x, y, w, d]] of lanes.entries()) {
     3,
     "transport",
     k.lineSvg(k.planOutline(k.insetPlan(p, 0.8), 3, CP), { tone: "lo" }),
+    { role: i >= 13 ? "return-channel" : undefined },
   );
   const sides =
     w > d
@@ -142,7 +149,10 @@ for (const [i, [x, y, w, d]] of lanes.entries()) {
           { x, y, w: 1, d, r: 0.3 },
           { x: x + w - 1, y, w: 1, d, r: 0.3 },
         ];
-  for (const side of sides) slab("channel-guide", side, 3, 1, "transport");
+  for (const side of sides)
+    slab("channel-guide", side, 3, 1, "transport", "", {
+      role: i >= 13 ? "return-channel" : undefined,
+    });
 }
 // A phone on a charging cradle: one of two clients of the same API.
 const phone = { x: -281, y: -90, w: 40, d: 59, r: 5 };

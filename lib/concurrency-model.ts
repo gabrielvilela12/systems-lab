@@ -15,7 +15,15 @@ export type Job = {
 };
 export type Worker = {
   id: string;
-  phase: "idle" | "query" | "read" | "process" | "write" | "blocked";
+  phase:
+    | "idle"
+    | "query"
+    | "read"
+    | "receive"
+    | "process"
+    | "result"
+    | "write"
+    | "blocked";
   job: number | null;
   due: number;
   since: number;
@@ -176,12 +184,19 @@ function handle(s: ConcurrencyState, w: Worker) {
     if (s.config.mode === "atomic") {
       job.status = "PROCESSANDO";
       job.owner = w.id;
-      phase(s, w, "process", 800);
+      phase(s, w, "receive", 600);
       log(s, w.id, `Verificou e reservou #${job.id} em uma operação atômica.`);
     } else {
       phase(s, w, "read", RESERVATION_GAP);
       log(s, w.id, `Leu #${job.id} como PENDENTE; ainda não o reservou.`);
     }
+  } else if (w.phase === "receive") {
+    phase(s, w, "process", 800);
+    log(
+      s,
+      w.id,
+      `Recebeu os dados de #${w.job}; envia o trabalho ao processamento.`,
+    );
   } else if (w.phase === "read") {
     const job = s.jobs.find((j) => j.id === w.job)!;
     // Deliberately unsafe: the worker trusts its earlier read instead of checking current status.
@@ -207,7 +222,14 @@ function handle(s: ConcurrencyState, w: Worker) {
         `Cobrou R$ 100 no pedido #${job.id}${job.effects > 1 ? " — EFEITO DUPLICADO" : ""}.`,
       );
     }
-    phase(s, w, "write", 400);
+    phase(s, w, "result", 800);
+  } else if (w.phase === "result") {
+    phase(s, w, "write", 1000);
+    log(
+      s,
+      w.id,
+      `Recebeu o resultado de #${w.job}; envia UPDATE de conclusão ao banco.`,
+    );
   } else if (w.phase === "write") {
     const job = s.jobs.find((j) => j.id === w.job)!;
     job.status = "CONCLUÍDO";
@@ -261,7 +283,7 @@ export function retryConcurrency(s: ConcurrencyState) {
   );
   for (const w of s.workers) {
     w.job = null;
-    phase(s, w, "query", w.id === "B" ? s.config.delayB : 0);
+    phase(s, w, "query", 400 + (w.id === "B" ? s.config.delayB : 0));
   }
   return true;
 }
@@ -277,9 +299,9 @@ export function concurrencyStage(s: ConcurrencyState) {
   if (s.flow === "api") return 1;
   if (s.flow === "save" || s.flow === "accepted") return 2;
   if (s.flow === "status" || s.flow === "complete") return 7;
-  if (s.workers.some((w) => w.phase === "write")) return 6;
+  if (s.workers.some((w) => ["result", "write"].includes(w.phase))) return 6;
   if (s.workers.some((w) => w.phase === "process")) return 5;
-  if (s.workers.some((w) => w.phase === "read")) return 4;
+  if (s.workers.some((w) => ["read", "receive"].includes(w.phase))) return 4;
   return 3;
 }
 export const concurrencySteps = [
@@ -330,7 +352,8 @@ export const concurrencySteps = [
   {
     title: "Grava conclusão",
     actor: "WORKER → BANCO",
-    action: "Depois do efeito, o worker atualiza o registro persistido.",
+    action:
+      "O processamento devolve o resultado ao worker. Ele envia a atualização de volta ao banco pelo canal de retorno.",
     data: "UPDATE pedido SET status = CONCLUÍDO",
     result: "O banco muda. A tela ainda precisa descobrir o resultado.",
   },
@@ -354,9 +377,11 @@ export function concurrencyStats(s: ConcurrencyState) {
 }
 export const workerLabels: Record<Worker["phase"], string> = {
   idle: "Aguardando início",
-  query: "Aguardando consulta",
+  query: "Enviando consulta ao banco",
   read: "Leu, ainda não reservou",
+  receive: "Recebendo o pedido reservado",
   process: "Executando cobrança",
+  result: "Resultado voltando ao worker",
   write: "Gravando conclusão",
   blocked: "Sem pendência disponível",
 };

@@ -38,7 +38,7 @@ test("backend completion reaches the screen through a later API status query", (
     origin: "app",
   });
   startConcurrency(s);
-  stepConcurrency(s, 4250);
+  stepConcurrency(s, 6250);
   assert.equal(s.flow, "status");
   assert.equal(s.jobs[0].status, "CONCLUÍDO");
   assert.equal(s.clientStatus, "RECEBIDO");
@@ -48,6 +48,30 @@ test("backend completion reaches the screen through a later API status query", (
   assert.equal(s.running, false);
   assert.equal(s.events.at(-1)?.worker, "APP");
   assert.ok(s.events.at(-1)?.text.includes("GET /pedidos/42"));
+});
+test("processing returns its result to the worker before the database becomes completed", () => {
+  const s = createConcurrency({
+    ...concurrencyDefaults,
+    mode: "atomic",
+    workers: 1,
+  });
+  startConcurrency(s);
+  stepConcurrency(s, WORKER_FIRST_QUERY);
+  assert.equal(s.workers[0].phase, "receive");
+  assert.equal(s.jobs[0].status, "PROCESSANDO");
+  assert.equal(s.attempts, 0);
+  stepConcurrency(s, 600 + 800);
+  assert.equal(s.workers[0].phase, "result");
+  assert.equal(s.jobs[0].effects, 1);
+  assert.equal(s.jobs[0].status, "PROCESSANDO");
+  stepConcurrency(s, 800);
+  assert.equal(s.workers[0].phase, "write");
+  assert.equal(s.jobs[0].status, "PROCESSANDO");
+  stepConcurrency(s, 999);
+  assert.equal(s.jobs[0].status, "PROCESSANDO");
+  stepConcurrency(s, 1);
+  assert.equal(s.jobs[0].status, "CONCLUÍDO");
+  assert.equal(s.clientStatus, "RECEBIDO");
 });
 test("both workers read the same pending job before unsafe reservation", () => {
   const s = createConcurrency();

@@ -44,6 +44,7 @@ import {
   requestRoutes,
   routePosition,
   flowPacket,
+  routeArrows,
 } from "../lib/concurrency-view";
 import { translateAlong, depthOf } from "./iso/iso-kit";
 const money = (value: number) =>
@@ -54,23 +55,55 @@ const money = (value: number) =>
   });
 const presets = [
   {
-    title: "1. Faça a corrida acontecer",
+    title: "1. Siga um pedido até voltar ao banco",
+    text: "Um worker. Consulta, recebe, processa e devolve o resultado ao banco.",
+    config: { ...concurrencyDefaults, mode: "atomic" as const, workers: 1 },
+  },
+  {
+    title: "2. Faça a corrida acontecer",
     text: "Dois workers, uma pendência. Observe ambos lerem antes da reserva.",
     config: { ...concurrencyDefaults },
   },
   {
-    title: "2. Divida com segurança",
+    title: "3. Divida com segurança",
     text: "Reserva atômica e quatro pedidos. Veja cada worker pegar um diferente.",
     config: { ...concurrencyDefaults, mode: "atomic" as const, jobs: 4 },
   },
   {
-    title: "3. Repita sem cobrar de novo",
+    title: "4. Repita sem cobrar de novo",
     text: "Execute e depois reprocesse #42. A chave de idempotência preserva o efeito.",
     config: {
       ...concurrencyDefaults,
       mode: "atomic" as const,
       idempotent: true,
     },
+  },
+];
+const workerJourney = [
+  {
+    title: "Consulta",
+    route: "Worker → Banco",
+    text: "O marcador cinza é uma pergunta: existe algum PENDENTE? Ainda não é o pedido indo para processar.",
+  },
+  {
+    title: "Recebe / reserva",
+    route: "Banco → Worker",
+    text: "O banco devolve os dados. Na reserva atômica, já pertencem a este worker; no modo inseguro, ele ainda tenta reservar depois da leitura.",
+  },
+  {
+    title: "Processa",
+    route: "Worker → Processamento",
+    text: "O worker envia o pedido reservado para executar a cobrança. A estação aplica o efeito e prepara a resposta.",
+  },
+  {
+    title: "Recebe resultado",
+    route: "Processamento → Worker",
+    text: "O resultado verde volta para quem pediu o processamento. A cobrança ocorreu, mas o banco ainda mostra PROCESSANDO.",
+  },
+  {
+    title: "Grava no banco",
+    route: "Worker → Banco",
+    text: "O resultado segue pelo canal externo de retorno. Quando chega ao banco, o worker grava CONCLUÍDO. Depois consulta outra pendência.",
   },
 ];
 export function ConcurrencyLab({
@@ -81,9 +114,12 @@ export function ConcurrencyLab({
   guide: ReactNode;
 }) {
   const [config, setConfig] = useState<ConcurrencyConfig>({
-    ...concurrencyDefaults,
+    ...presets[0].config,
   });
-  const [snap, setSnap] = useState(() => createConcurrency());
+  const [snap, setSnap] = useState(() => createConcurrency(presets[0].config));
+  const [followWorker, setFollowWorker] = useState("A");
+  const [speed, setSpeed] = useState(0.5);
+  const speedRef = useRef(0.5);
   const [zoom, setZoom] = useState(false);
   const [inspect, setInspect] = useState<InspectStation | null>(null);
   const inspectTrigger = useRef<HTMLElement | null>(null);
@@ -93,7 +129,7 @@ export function ConcurrencyLab({
     [notice, setNotice] = useState(
       "Experimente a disputa ou avance um passo de cada vez.",
     );
-  const model = useRef(createConcurrency()),
+  const model = useRef(createConcurrency(presets[0].config)),
     pauseRef = useRef(true),
     stage = useRef<HTMLDivElement>(null),
     clock = useRef<HTMLElement>(null),
@@ -131,6 +167,7 @@ export function ConcurrencyLab({
     takeControl();
     model.current = createConcurrency(next);
     setConfig({ ...next });
+    if (next.workers === 1) setFollowWorker("A");
     pause(true);
     drawRef.current();
     read();
@@ -192,6 +229,9 @@ export function ConcurrencyLab({
     }
   }, [inspect]);
   useEffect(() => {
+    drawRef.current();
+  }, [followWorker]);
+  useEffect(() => {
     const host = stage.current!;
     const moving = [...host.querySelectorAll<SVGGElement>("[data-move]")];
     const pieces = [...host.querySelectorAll<SVGGElement>("[data-depth]")];
@@ -209,6 +249,9 @@ export function ConcurrencyLab({
     ];
     const reduced = matchMedia("(prefers-reduced-motion: reduce)");
     const packets = [...host.querySelectorAll<SVGGElement>("[data-packet]")];
+    const arrows = [
+      ...host.querySelectorAll<SVGGElement>("[data-route-arrows]"),
+    ];
     const stationPieces = [
       ...host.querySelectorAll<SVGGElement>("[data-station]"),
     ];
@@ -284,7 +327,7 @@ export function ConcurrencyLab({
       }
       if (counter) counter.textContent = String(concurrencyStats(s).effects);
       const current = concurrencyStage(s);
-      const activeStation = [
+      let activeStation = [
         s.config.origin,
         "api",
         "register",
@@ -294,6 +337,15 @@ export function ConcurrencyLab({
         "register",
         s.config.origin,
       ][current];
+      if (s.flow === "background") {
+        const followed = s.workers.find(
+          (w) => w.id === host.dataset.followWorker,
+        );
+        if (followed && ["read", "receive", "result"].includes(followed.phase))
+          activeStation = `worker-${followed.id}`;
+        else if (followed?.phase === "process") activeStation = "counter";
+        else activeStation = "register";
+      }
       for (const el of stationPieces)
         el.setAttribute(
           "data-current",
@@ -325,20 +377,44 @@ export function ConcurrencyLab({
           if (s.flow === "status")
             p = fp < 0.5 ? (fp - 0.25) * 4 : (fp - 0.5) * 4;
         } else {
-          const i = name === "a" || name === "effectA" ? 0 : 1;
+          const i = ["a", "effectA", "returnA"].includes(name) ? 0 : 1;
           const w = s.workers[i];
           if (w) {
             if (name === "a" || name === "b") {
-              on = ["query", "read", "write"].includes(w.phase);
+              on = ["query", "read", "receive"].includes(w.phase);
               p = progress(w.since, w.due);
-              reverse = w.phase === "query" || w.phase === "write";
+              reverse = w.phase === "query";
+              if (w.phase === "read") {
+                on = p < 0.5;
+                p *= 2;
+              }
+            } else if (name.startsWith("return")) {
+              on = w.phase === "write";
+              p = progress(w.since, w.due);
             } else {
-              on = w.phase === "process";
+              on = w.phase === "process" || w.phase === "result";
               p = progress(w.since, w.due);
+              reverse = w.phase === "result";
+              if (w.phase === "process") {
+                on = p < 0.75;
+                p /= 0.75;
+              }
             }
+            el.dataset.kind =
+              w.phase === "query"
+                ? "query"
+                : ["result", "write"].includes(w.phase)
+                  ? "result"
+                  : "job";
           }
         }
         el.style.visibility = on ? "visible" : "hidden";
+        const arrow = arrows.find((a) => a.dataset.routeArrows === name);
+        if (arrow) {
+          arrow.style.visibility = on ? "visible" : "hidden";
+          arrow.dataset.reverse = String(reverse);
+          arrow.dataset.kind = el.dataset.kind ?? "job";
+        }
         if (on)
           el.setAttribute(
             "transform",
@@ -358,9 +434,9 @@ export function ConcurrencyLab({
         !pauseRef.current &&
         model.current.running
       )
-        stepConcurrency(model.current, dt * 1000);
+        stepConcurrency(model.current, dt * 1000 * speedRef.current);
       else if (interacted.current && !pauseRef.current && model.current.running)
-        stepConcurrency(model.current, dt * 1000);
+        stepConcurrency(model.current, dt * 1000 * speedRef.current);
       if (
         !interacted.current &&
         !reduced.matches &&
@@ -381,7 +457,7 @@ export function ConcurrencyLab({
       ) {
         tourIdle += dt;
         if (tourIdle > 5) {
-          model.current = createConcurrency();
+          model.current = createConcurrency(presets[0].config);
           tourIdle = 0;
           pause(true);
         }
@@ -482,6 +558,19 @@ export function ConcurrencyLab({
   const stats = concurrencyStats(snap);
   const currentStep = concurrencyStage(snap);
   const detail = concurrencySteps[currentStep];
+  const followed = snap.workers.find((w) => w.id === followWorker);
+  const journeyIndex = !followed
+    ? -1
+    : {
+        idle: -1,
+        query: 0,
+        read: 1,
+        receive: 1,
+        process: 2,
+        result: 3,
+        write: 4,
+        blocked: -1,
+      }[followed.phase];
   const selectedStation = stationAnchors.find((s) => s.id === inspect);
   return (
     <main className="hub-shell concurrency-lab">
@@ -514,7 +603,9 @@ export function ConcurrencyLab({
           <span>BANCO</span>
           <ArrowRight size={14} />
           <span>WORKERS</span>
-          <p>Recebido agora. Processado depois.</p>
+          <p>
+            Processamento → worker → banco: o resultado faz o caminho de volta.
+          </p>
         </div>
       </section>
       <section className="con-presets" aria-label="Experimentos guiados">
@@ -542,6 +633,7 @@ export function ConcurrencyLab({
             className="con-plate iso iso-plate"
             data-theme={light ? "light" : "dark"}
             data-origin={config.origin}
+            data-follow-worker={followWorker}
             data-inspect={inspect ?? undefined}
             ref={stage}
             tabIndex={0}
@@ -600,6 +692,19 @@ export function ConcurrencyLab({
               >
                 {art}
                 <g mask="url(#con-packet-occlusion)">
+                  {Object.entries(requestRoutes).map(([name, points]) => (
+                    <g
+                      key={name}
+                      data-route-arrows={name}
+                      style={{ visibility: "hidden" }}
+                    >
+                      <path data-direction="forward" d={routeArrows(points)} />
+                      <path
+                        data-direction="reverse"
+                        d={routeArrows(points, true)}
+                      />
+                    </g>
+                  ))}
                   {Object.keys(requestRoutes).map((name) => (
                     <g
                       key={name}
@@ -636,6 +741,96 @@ export function ConcurrencyLab({
                 ))}
               </div>
             </div>
+            <section
+              className="con-worker-stream"
+              aria-label="Percurso completo do worker"
+            >
+              <header>
+                <strong>ACOMPANHE O WORKER</strong>
+                <div role="group" aria-label="Worker acompanhado">
+                  {snap.workers.map((w) => (
+                    <button
+                      key={w.id}
+                      aria-pressed={followWorker === w.id}
+                      onClick={() => {
+                        takeControl();
+                        setFollowWorker(w.id);
+                      }}
+                    >
+                      Worker {w.id}
+                    </button>
+                  ))}
+                </div>
+                <label className="con-stream-speed">
+                  Velocidade
+                  <select
+                    value={speed}
+                    onChange={(e) => {
+                      takeControl();
+                      const value = Number(e.target.value);
+                      speedRef.current = value;
+                      setSpeed(value);
+                    }}
+                  >
+                    <option value={0.25}>0,25×</option>
+                    <option value={0.5}>0,5×</option>
+                    <option value={1}>1×</option>
+                  </select>
+                </label>
+                <span>
+                  {followed?.job
+                    ? `PEDIDO #${followed.job}`
+                    : "CONSULTA SEM PEDIDO"}
+                </span>
+              </header>
+              <ol>
+                {workerJourney.map((j, i) => (
+                  <li
+                    key={j.title}
+                    aria-current={i === journeyIndex ? "step" : undefined}
+                    data-finished={journeyIndex > i}
+                  >
+                    <span>{i + 1}</span>
+                    <div>
+                      <strong>{j.title}</strong>
+                      <small>{j.route}</small>
+                    </div>
+                    <ArrowRight size={13} />
+                  </li>
+                ))}
+              </ol>
+              <p aria-live="polite">
+                <b>
+                  {journeyIndex >= 0
+                    ? workerJourney[journeyIndex].route
+                    : followed?.phase === "blocked"
+                      ? "Banco sem pendência disponível"
+                      : "Comece seguindo um único worker"}
+                </b>
+                {" · "}
+                {journeyIndex >= 0
+                  ? workerJourney[journeyIndex].text
+                  : followed?.phase === "blocked"
+                    ? "Este worker terminou sua busca nesta rodada. A tela consulta o resultado pela API."
+                    : "O percurso tem ida e volta: a pergunta sai do worker, o pedido vem do banco e o resultado retorna ao banco."}
+              </p>
+              <div className="con-stream-key">
+                <span>
+                  <i data-kind="query" />
+                  Cinza = consulta
+                </span>
+                <span>
+                  <i data-kind={config.origin} />
+                  {config.origin === "front"
+                    ? "Azul = pedido do web"
+                    : "Roxo = pedido do celular"}
+                </span>
+                <span>
+                  <i data-kind="result" />
+                  Verde = resultado / conclusão
+                </span>
+              </div>
+            </section>
             <div className="con-plate-bottom">
               <span>SIMULAÇÃO LOCAL · ETAPA {currentStep + 1}/8</span>
               <b ref={clock} data-readout>
@@ -691,7 +886,9 @@ export function ConcurrencyLab({
                   ? "Pressione Próxima ação para enviar o pedido e acompanhar cada etapa sem pressa."
                   : currentStep === 5 && config.mode === "atomic"
                     ? "A verificação e a reserva aconteceram juntas: cada worker recebe um pedido disponível. Agora executa a cobrança."
-                    : detail.action}
+                    : currentStep === 4 && config.mode === "atomic"
+                      ? "O banco reservou cada pedido em uma operação atômica e devolve os dados ao worker responsável."
+                      : detail.action}
               </p>
             </div>
             <div>

@@ -1484,6 +1484,273 @@
   outline: 2px solid var(--inspect-color);
   outline-offset: 3px;
 }
+.con-presets {
+  grid-template-columns: repeat(4, 1fr);
+}
+.con-worker-stream {
+  margin: 0 22px 12px;
+  padding: 18px;
+  border: 1px solid #ffffff16;
+  border-radius: 7px;
+  background: #11161c;
+  color: #dce4ec;
+}
+.con-worker-stream header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+  font: 10px var(--hub-mono);
+}
+.con-worker-stream header > span {
+  margin-left: auto;
+  color: #a2b4c2;
+}
+.con-stream-speed {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.con-stream-speed select {
+  background: transparent;
+  color: inherit;
+  border: 1px solid #899ca550;
+  border-radius: 4px;
+  padding: 6px;
+}
+.con-stream-speed option {
+  background: #17212a;
+  color: #e4ecf0;
+}
+.con-worker-stream header button {
+  padding: 7px 10px;
+  border: 1px solid #ffffff25;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  margin-right: 5px;
+}
+.con-worker-stream header button[aria-pressed="true"] {
+  background: #e4c78518;
+  border-color: #e4c785;
+  color: #e4c785;
+}
+.con-worker-stream ol {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 9px;
+  padding: 0;
+  margin: 17px 0;
+  list-style: none;
+}
+.con-worker-stream li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px;
+  border: 1px solid #ffffff14;
+  border-radius: 5px;
+  min-width: 0;
+}
+.con-worker-stream li > span {
+  font: 11px var(--hub-mono);
+  color: #81909e;
+}
+.con-worker-stream li > div {
+  flex: 1;
+}
+.con-worker-stream li strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.con-worker-stream li small {
+  display: block;
+  font: 9px var(--hub-mono);
+  margin-top: 6px;
+  color: #94a9b8;
+}
+.con-worker-stream li > svg {
+  flex-shrink: 0;
+  color: #779084;
+}
+.con-worker-stream li[aria-current="step"] {
+  border-color: #e4c785;
+  background: #e4c78510;
+}
+.con-worker-stream li[aria-current="step"] > span {
+  color: #e4c785;
+}
+.con-worker-stream li[data-finished="true"] {
+  border-color: #80c9ab45;
+}
+.con-worker-stream p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 0;
+  color: #aebbc7;
+}
+.con-worker-stream p b {
+  color: #dce4ec;
+  font-weight: 500;
+}
+.con-stream-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 13px;
+  font: 10px var(--hub-mono);
+  color: #aebbc7;
+}
+.con-stream-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.con-stream-key i {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  border-radius: 1px;
+}
+.con-stream-key [data-kind="query"] {
+  background: #aebbc7;
+}
+.con-stream-key [data-kind="front"] {
+  background: #75c7eb;
+}
+.con-stream-key [data-kind="app"] {
+  background: #c0a2ec;
+}
+.con-stream-key [data-kind="result"] {
+  background: #80d7ad;
+}
+.con-plate [data-route-arrows] {
+  pointer-events: none;
+  fill: #75c7eb;
+}
+.con-plate[data-origin="app"] [data-route-arrows] {
+  fill: #c0a2ec;
+}
+.con-plate [data-route-arrows][data-reverse="true"] [data-direction="forward"],
+.con-plate
+  [data-route-arrows]:not([data-reverse="true"])
+  [data-direction="reverse"] {
+  display: none;
+}
+.con-plate[data-origin] [data-packet][data-kind="query"] .iso-top,
+.con-plate[data-origin] [data-route-arrows][data-kind="query"] {
+  fill: #aebbc7;
+}
+.con-plate[data-origin] [data-packet][data-kind="result"] .iso-top,
+.con-plate[data-origin] [data-route-arrows][data-kind="result"] {
+  fill: #80d7ad;
+}
+.con-plate [data-role="return-channel"] .iso-top {
+  fill: #39574b;
+}
+.con-plate[data-follow-worker="A"]
+  :is(
+    [data-packet="b"],
+    [data-packet="effectB"],
+    [data-packet="returnB"],
+    [data-route-arrows="b"],
+    [data-route-arrows="effectB"],
+    [data-route-arrows="returnB"]
+  ),
+.con-plate[data-follow-worker="B"]
+  :is(
+    [data-packet="a"],
+    [data-packet="effectA"],
+    [data-packet="returnA"],
+    [data-route-arrows="a"],
+    [data-route-arrows="effectA"],
+    [data-route-arrows="returnA"]
+  ) {
+  opacity: 0.25;
+}
+.con-plate[data-theme="light"] .con-worker-stream {
+  background: #f0f3f5;
+  color: #2b3d4c;
+  border-color: #20354430;
+}
+.con-plate[data-theme="light"] .con-worker-stream :is(p, small, header > span) {
+  color: #536978;
+}
+.con-plate[data-theme="light"] .con-worker-stream p b {
+  color: #243c4b;
+}
+.con-plate[data-theme="light"] .con-stream-key,
+.con-plate[data-theme="light"] .con-stream-key span {
+  color: #536978;
+}
+.con-plate[data-theme="light"] .con-worker-stream li {
+  border-color: #20354425;
+}
+.con-plate[data-theme="light"] .con-worker-stream li[aria-current="step"] {
+  border-color: #8d692d;
+  background: #dcb97725;
+}
+.con-plate[data-theme="light"]
+  .con-worker-stream
+  :is(header button[aria-pressed="true"], li[aria-current="step"] > span) {
+  border-color: #8d692d;
+  color: #75501c;
+}
+.con-plate[data-theme="light"] [data-role="return-channel"] .iso-top {
+  fill: #8daf9c;
+}
+.con-plate[data-theme="light"][data-origin]
+  [data-packet][data-kind="result"]
+  .iso-top,
+.con-plate[data-theme="light"][data-origin]
+  [data-route-arrows][data-kind="result"] {
+  fill: #24805a;
+}
+.con-plate[data-theme="light"][data-origin]
+  [data-packet][data-kind="query"]
+  .iso-top,
+.con-plate[data-theme="light"][data-origin]
+  [data-route-arrows][data-kind="query"] {
+  fill: #586c7c;
+}
+@media (max-width: 1000px) {
+  .con-presets {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .con-worker-stream ol {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .con-presets {
+    grid-template-columns: 1fr;
+  }
+  .con-worker-stream {
+    margin: 0 12px 12px;
+    padding: 13px;
+  }
+  .con-worker-stream header {
+    gap: 10px;
+  }
+  .con-worker-stream header > span {
+    margin-left: 0;
+  }
+  .con-worker-stream ol {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    margin: 12px 0;
+  }
+  .con-worker-stream li {
+    padding: 9px;
+  }
+  .con-worker-stream li small {
+    margin-top: 3px;
+  }
+  .con-worker-stream li > svg {
+    transform: rotate(90deg);
+  }
+}
 @media (max-width: 520px) {
   .con-station-pins button {
     width: 24px;

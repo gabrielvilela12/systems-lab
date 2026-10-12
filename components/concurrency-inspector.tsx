@@ -305,8 +305,9 @@ export function ConcurrencyInspector({
           <>
             <p>
               Um processo independente consulta pendências, tenta reservar uma e
-              executa o trabalho. Sua memória local é diferente do registro
-              compartilhado no banco.
+              envia o trabalho ao processamento. Recebe o resultado e grava a
+              conclusão de volta no banco. Sua memória local é diferente do
+              registro compartilhado no banco.
             </p>
             <div className="con-inspect-state">
               <span>ATIVIDADE ATUAL</span>
@@ -324,6 +325,19 @@ export function ConcurrencyInspector({
                       worker: worker.id,
                       fase: worker.phase,
                       pedido: worker.job,
+                      caminhoAtual:
+                        worker.phase === "query"
+                          ? "Worker → Banco: consulta"
+                          : ["read", "receive"].includes(worker.phase)
+                            ? "Banco → Worker: dados do pedido"
+                            : worker.phase === "process"
+                              ? "Worker → Processamento: executar"
+                              : worker.phase === "result"
+                                ? "Processamento → Worker: resultado"
+                                : worker.phase === "write"
+                                  ? "Worker → Banco: UPDATE de conclusão"
+                                  : null,
+                      resultadoRecebido: worker.phase === "write",
                       leituraLocal:
                         worker.phase === "read"
                           ? "PENDENTE · ainda sem reserva"

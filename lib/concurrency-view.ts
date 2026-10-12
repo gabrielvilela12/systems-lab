@@ -90,6 +90,20 @@ export const requestRoutes = {
     [234, 65, 8],
     [234, 43, 8],
   ],
+  returnA: [
+    [143, -63, 8],
+    [151, -63, 8],
+    [151, -105, 8],
+    [-40, -105, 8],
+    [-40, -30, 8],
+  ],
+  returnB: [
+    [143, 65, 8],
+    [151, 65, 8],
+    [151, 105, 8],
+    [-40, 105, 8],
+    [-40, 74, 8],
+  ],
 } satisfies Record<string, k.Point3[]>;
 export function routePosition(
   points: k.Point3[],
@@ -116,3 +130,32 @@ export const flowPacket = k.solidSvg(
   k.slabOf({ x: -3, y: -2, w: 6, d: 4, r: 0.6 }, 0, 3, CP, 4, 0.3),
   { tone: "hi", lit: true, crease: "lo" },
 );
+// Closed floor chevrons indicate the direction of the current exchange.
+export function routeArrows(points: k.Point3[], reverse = false) {
+  return points
+    .slice(1)
+    .map((b, i) => {
+      const a = points[i],
+        length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const sign = reverse ? -1 : 1;
+      const dx = ((b[0] - a[0]) / length) * sign;
+      const dy = ((b[1] - a[1]) / length) * sign;
+      const x = (a[0] + b[0]) / 2,
+        y = (a[1] + b[1]) / 2;
+      return k.pathOf(
+        [
+          [3, 0],
+          [-2, 1.5],
+          [-1, 0],
+          [-2, -1.5],
+        ].map(([along, across]) =>
+          k.iso(
+            [x + dx * along - dy * across, y + dy * along + dx * across, 4.5],
+            CP,
+          ),
+        ),
+        true,
+      );
+    })
+    .join(" ");
+}
