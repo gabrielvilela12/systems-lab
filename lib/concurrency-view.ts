@@ -12,38 +12,44 @@ export const concurrencyAt = (p: k.Point3) => k.iso(p, CP);
 export const CARRIAGE_TRAVEL = 22;
 export const stationAnchors = [
   {
-    id: "client",
-    title: "01 · App / frontend",
+    id: "app",
+    title: "01 · Celular / app",
     hint: "Envia a solicitação",
-    at: concurrencyAt([-263, 26, 30]),
+    at: concurrencyAt([-263, -64, 19]),
+  },
+  {
+    id: "front",
+    title: "02 · Frontend web",
+    hint: "Envia a solicitação",
+    at: concurrencyAt([-263, 43, 47]),
   },
   {
     id: "api",
-    title: "02 · API",
+    title: "03 · API",
     hint: "Valida e salva",
     at: concurrencyAt([-172, 23, 48]),
   },
   {
     id: "register",
-    title: "03 · Banco",
+    title: "04 · Banco",
     hint: "Guarda os pendentes",
     at: concurrencyAt([-39, 25, 26]),
   },
   {
     id: "worker-A",
-    title: "04 · Worker A",
+    title: "05 · Worker A",
     hint: "Busca e processa",
     at: concurrencyAt([100, -63, 34]),
   },
   {
     id: "worker-B",
-    title: "05 · Worker B",
+    title: "06 · Worker B",
     hint: "Disputa as pendências",
     at: concurrencyAt([100, 65, 34]),
   },
   {
     id: "counter",
-    title: "06 · Processamento",
+    title: "07 · Processamento",
     hint: "Aplica a cobrança",
     at: concurrencyAt([233, 15, 50]),
   },

@@ -44,6 +44,9 @@ export function ConcurrencyArt() {
             data-move={p.move ? p.group.replace("worker-", "") : undefined}
             data-role={p.role}
             data-station={p.group}
+            data-inspectable={
+              p.group !== "base" && p.group !== "transport" ? "true" : undefined
+            }
             data-index={p.index}
             dangerouslySetInnerHTML={{ __html: p.markup }}
           />

@@ -146,39 +146,39 @@ for (const [i, [x, y, w, d]] of lanes.entries()) {
 }
 // A phone on a charging cradle: one of two clients of the same API.
 const phone = { x: -281, y: -90, w: 40, d: 59, r: 5 };
-slab("phone-cradle", phone, 0, 5, "client", screws(phone, 5));
-slab("phone-body", { x: -276, y: -83, w: 30, d: 42, r: 4 }, 5, 7, "client");
+slab("phone-cradle", phone, 0, 5, "app", screws(phone, 5));
+slab("phone-body", { x: -276, y: -83, w: 30, d: 42, r: 4 }, 5, 7, "app");
 slab(
   "phone-glass",
   { x: -273, y: -79, w: 24, d: 32, r: 2 },
   12,
   1,
-  "client",
+  "app",
   trim({ x: -273, y: -79, w: 24, d: 32, r: 2 }, 13),
   { role: "client-screen", index: 0 },
 );
-slab("phone-button", { x: -265, y: -45, w: 8, d: 2, r: 1 }, 12, 1, "client");
-slab("phone-lens", { x: -263, y: -81, w: 4, d: 1, r: 0.4 }, 12, 1, "client");
+slab("phone-button", { x: -265, y: -45, w: 8, d: 2, r: 1 }, 12, 1, "app");
+slab("phone-lens", { x: -263, y: -81, w: 4, d: 1, r: 0.4 }, 12, 1, "app");
 // A web terminal with a real upright screen and separate keyboard keys.
 const web = { x: -281, y: 33, w: 46, d: 49, r: 4 };
-slab("terminal-base", web, 0, 4, "client", screws(web, 4));
+slab("terminal-base", web, 0, 4, "front", screws(web, 4));
 slab(
   "terminal-deck",
   k.insetPlan(web, 2),
   4,
   5,
-  "client",
+  "front",
   trim(k.insetPlan(web, 2), 9),
 );
-slab("monitor-foot", { x: -271, y: 35, w: 24, d: 12, r: 2 }, 9, 3, "client");
-slab("monitor-neck", { x: -264, y: 37, w: 10, d: 6, r: 1 }, 12, 9, "client");
-slab("monitor-case", { x: -274, y: 33, w: 34, d: 7, r: 1 }, 21, 23, "client");
+slab("monitor-foot", { x: -271, y: 35, w: 24, d: 12, r: 2 }, 9, 3, "front");
+slab("monitor-neck", { x: -264, y: 37, w: 10, d: 6, r: 1 }, 12, 9, "front");
+slab("monitor-case", { x: -274, y: 33, w: 34, d: 7, r: 1 }, 21, 23, "front");
 slab(
   "monitor-window",
   { x: -270, y: 40, w: 26, d: 1, r: 0.2 },
   25,
   15,
-  "client",
+  "front",
   "",
   { role: "client-screen", index: 1 },
 );
@@ -189,7 +189,7 @@ for (let y = 0; y < 2; y++)
       { x: -273 + x * 10, y: 57 + y * 9, w: 7, d: 6, r: 0.7 },
       9,
       1,
-      "client",
+      "front",
     );
 // API rack: request validation, persistence and response, not the background worker.
 const api = { x: -195, y: -12, w: 58, d: 82, r: 4 };

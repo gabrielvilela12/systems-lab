@@ -18,6 +18,11 @@ import {
 } from "lucide-react";
 import { HubNav } from "./hub-nav";
 import {
+  ConcurrencyInspector,
+  isInspectStation,
+  type InspectStation,
+} from "./concurrency-inspector";
+import {
   concurrencyDefaults,
   createConcurrency,
   startConcurrency,
@@ -80,7 +85,8 @@ export function ConcurrencyLab({
   });
   const [snap, setSnap] = useState(() => createConcurrency());
   const [zoom, setZoom] = useState(false);
-  const [inspect, setInspect] = useState<string | null>(null);
+  const [inspect, setInspect] = useState<InspectStation | null>(null);
+  const inspectTrigger = useRef<HTMLElement | null>(null);
   const [paused, setPaused] = useState(true),
     [light, setLight] = useState(false),
     [preset, setPreset] = useState(0),
@@ -99,6 +105,23 @@ export function ConcurrencyLab({
   }
   function takeControl() {
     interacted.current = true;
+  }
+  function openInspector(id: InspectStation, trigger?: HTMLElement) {
+    takeControl();
+    pause(true);
+    drawRef.current();
+    read();
+    inspectTrigger.current =
+      trigger ??
+      stage.current?.querySelector<HTMLButtonElement>(
+        `[data-open-station="${id}"]`,
+      ) ??
+      null;
+    setInspect(id);
+  }
+  function closeInspector() {
+    setInspect(null);
+    inspectTrigger.current?.focus({ preventScroll: true });
   }
   function pause(value: boolean) {
     pauseRef.current = value;
@@ -262,14 +285,14 @@ export function ConcurrencyLab({
       if (counter) counter.textContent = String(concurrencyStats(s).effects);
       const current = concurrencyStage(s);
       const activeStation = [
-        "client",
+        s.config.origin,
         "api",
         "register",
         "register",
         "register",
         "counter",
         "register",
-        "client",
+        s.config.origin,
       ][current];
       for (const el of stationPieces)
         el.setAttribute(
@@ -518,6 +541,7 @@ export function ConcurrencyLab({
           <div
             className="con-plate iso iso-plate"
             data-theme={light ? "light" : "dark"}
+            data-origin={config.origin}
             data-inspect={inspect ?? undefined}
             ref={stage}
             tabIndex={0}
@@ -567,6 +591,12 @@ export function ConcurrencyLab({
                 className="iso-svg"
                 role="img"
                 aria-label="Fluxo isométrico com app e frontend, rack da API, banco de pendências, dois workers e estação de processamento"
+                onClick={(e) => {
+                  const id = (e.target as Element).closest<SVGGElement>(
+                    "[data-inspectable]",
+                  )?.dataset.station;
+                  if (isInspectStation(id)) openInspector(id);
+                }}
               >
                 {art}
                 <g mask="url(#con-packet-occlusion)">
@@ -580,10 +610,21 @@ export function ConcurrencyLab({
                   ))}
                 </g>
               </svg>
-              <div className="con-station-pins" aria-hidden="true">
+              <div
+                className="con-station-pins"
+                aria-label="Ver o conteúdo das peças"
+              >
                 {stationAnchors.map((s, i) => (
-                  <span
+                  <button
                     key={s.id}
+                    data-open-station={s.id}
+                    aria-label={`Ver por dentro: ${s.title.slice(5)}`}
+                    aria-controls="con-component-inspector"
+                    aria-expanded={inspect === s.id}
+                    onClick={(e) => {
+                      if (isInspectStation(s.id))
+                        openInspector(s.id, e.currentTarget);
+                    }}
                     data-selected={inspect === s.id}
                     style={{
                       left: `${(s.at[0] / CONCURRENCY_WIDTH) * 100}%`,
@@ -591,7 +632,7 @@ export function ConcurrencyLab({
                     }}
                   >
                     {i + 1}
-                  </span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -607,7 +648,12 @@ export function ConcurrencyLab({
               <button
                 key={s.id}
                 aria-pressed={inspect === s.id}
-                onClick={() => setInspect(inspect === s.id ? null : s.id)}
+                data-open-station={s.id}
+                aria-controls="con-component-inspector"
+                onClick={(e) => {
+                  if (isInspectStation(s.id))
+                    openInspector(s.id, e.currentTarget);
+                }}
               >
                 <strong>{s.title}</strong>
                 <small>{s.hint}</small>
@@ -616,8 +662,8 @@ export function ConcurrencyLab({
           </div>
           <p className="con-station-hint">
             {selectedStation
-              ? `${selectedStation.title}: ${selectedStation.hint}. A estação está destacada na figura.`
-              : "Os números ligam as peças às estações. Clique em uma estação para destacá-la."}
+              ? `${selectedStation.title}: conteúdo aberto. Avance uma ação no painel para ver os dados mudarem.`
+              : "Web azul · celular roxo. Clique diretamente em uma peça, no número ou no nome para ver seu conteúdo."}
           </p>
           <div className="con-steps" aria-label="Percurso do pedido">
             {concurrencySteps.map((s, i) => (
@@ -955,6 +1001,16 @@ export function ConcurrencyLab({
         </div>
       </section>
       {guide}
+      {inspect && (
+        <ConcurrencyInspector
+          station={inspect}
+          state={snap}
+          paused={paused}
+          onClose={closeInspector}
+          onStep={step}
+          onOrigin={(origin) => change("origin", origin)}
+        />
+      )}
       <footer className="hub-footer">
         <span>SYSTEMS LAB / Aprenda a coordenar o estado.</span>
         <a href="/labs/connections">
