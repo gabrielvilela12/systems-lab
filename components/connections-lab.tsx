@@ -578,6 +578,9 @@ function ConnectionComparison() {
       if (!layer.current) return;
       const s = state.current;
       const packets = s.packets.filter((p) => !p.handled).slice(-12);
+      const gap = stage.current
+        ? parseFloat(getComputedStyle(stage.current).columnGap)
+        : 18;
       for (let i = 0; i < 12; i++) {
         const node = layer.current.children[i] as HTMLDivElement;
         const p = packets[i];
@@ -585,12 +588,17 @@ function ConnectionComparison() {
           node.style.opacity = "0";
           continue;
         }
-        const start = p.from === "front" ? 17 : p.from === "backend" ? 50 : 83,
-          end = p.to === "front" ? 17 : p.to === "backend" ? 50 : 83,
+        const start =
+            p.from === "front" ? 100 / 6 : p.from === "backend" ? 50 : 500 / 6,
+          end = p.to === "front" ? 100 / 6 : p.to === "backend" ? 50 : 500 / 6,
+          startOffset =
+            p.from === "front" ? -gap / 3 : p.from === "backend" ? 0 : gap / 3,
+          endOffset =
+            p.to === "front" ? -gap / 3 : p.to === "backend" ? 0 : gap / 3,
           t = calm.matches
             ? 0
             : Math.min(1, (s.now - p.sentAt) / (p.arriveAt - p.sentAt));
-        node.style.left = `${start + (end - start) * t}%`;
+        node.style.left = `calc(${start + (end - start) * t}% + ${startOffset + (endOffset - startOffset) * t}px)`;
         node.style.top = "31%";
         node.style.opacity = "1";
         node.dataset.actor = p.from;

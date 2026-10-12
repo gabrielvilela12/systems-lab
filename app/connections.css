@@ -500,10 +500,12 @@
   margin-bottom: 9px;
 }
 .connection-network {
+  --peer-gap: 18px;
+  --lane-height: 85px;
   padding: 20px 25px 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  gap: var(--peer-gap);
   position: relative;
 }
 .connection-peer {
@@ -559,13 +561,13 @@
   position: absolute;
   top: 100%;
   left: 50%;
-  height: 47px;
+  height: calc(var(--peer-gap) + 3px + var(--lane-height) * 0.31);
   border-left: 1px solid #58636f;
 }
 .connection-lanes {
   position: relative;
   grid-column: 1 / -1;
-  height: 85px;
+  height: var(--lane-height);
   margin-top: 3px;
 }
 .lane-front,
@@ -576,12 +578,12 @@
   height: 23px;
 }
 .lane-front {
-  left: 17%;
-  width: 33%;
+  left: calc(16.6667% - var(--peer-gap) / 3);
+  width: calc(33.3333% + var(--peer-gap) / 3);
 }
 .lane-provider {
   left: 50%;
-  width: 33%;
+  width: calc(33.3333% + var(--peer-gap) / 3);
   opacity: 0.2;
   border-top-style: dashed;
 }
@@ -1126,8 +1128,10 @@
     gap: 7px 13px;
   }
   .connection-network {
+    --peer-gap: 7px;
+    --lane-height: 78px;
     padding: 0 12px;
-    gap: 7px;
+    gap: var(--peer-gap);
   }
   .connection-peer {
     padding: 13px 5px;
@@ -1149,10 +1153,7 @@
     min-height: 46px;
   }
   .connection-lanes {
-    height: 78px;
-  }
-  .connection-peer:after {
-    height: 34px;
+    height: var(--lane-height);
   }
   .lane-front > span,
   .lane-provider > span {
