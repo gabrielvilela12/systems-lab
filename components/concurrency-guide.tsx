@@ -111,13 +111,35 @@ COMMIT;
       <div className="con-guide-flow">
         <strong>Seu fluxo completo</strong>
         <p>
-          App e frontend → API → banco PENDENTE → worker reserva → executa →
-          banco CONCLUÍDO. A tela acompanha o resultado pela API, com polling,
-          SSE ou outro canal adequado.
+          1. App ou frontend envia POST com os dados. 2. A API valida e grava
+          PENDENTE no banco. 3. A API responde 202 com o identificador:
+          recebido, ainda sem resultado final. 4. O background consulta
+          pendências no banco, reserva e executa o trabalho. 5. O worker grava
+          CONCLUÍDO. 6. A tela consulta GET de status na API para mostrar o
+          resultado.
+        </p>
+        <p>
+          A API e o background são partes separadas. Neste desenho, a ponte
+          entre eles é o registro persistido no banco. As setas animadas
+          representam chamadas e dados; não existe um envio direto da API para o
+          worker. A etapa de cobrança representa uma ação do worker em outra
+          parte do sistema.
+        </p>
+        <p>
+          Use “Próxima ação” para ler uma passagem de cada vez. O exemplo usa
+          consulta de status pela API; SSE ou outro canal pode ser escolhido em
+          um sistema real.
         </p>
       </div>
       <div className="con-sources">
         <span>APROFUNDE</span>
+        <a
+          href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202"
+          target="_blank"
+          rel="noreferrer"
+        >
+          MDN · 202 Accepted <ArrowUpRight size={12} />
+        </a>
         <a
           href="https://www.postgresql.org/docs/current/sql-select.html"
           target="_blank"

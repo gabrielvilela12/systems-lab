@@ -5,6 +5,7 @@ export type ConcurrencyConfig = {
   jobs: number;
   delayB: number;
   idempotent: boolean;
+  origin: "app" | "front";
 };
 export type Job = {
   id: number;
@@ -24,6 +25,18 @@ export type ConcurrencyState = {
   clock: number;
   running: boolean;
   started: boolean;
+  flow:
+    | "ready"
+    | "request"
+    | "api"
+    | "save"
+    | "accepted"
+    | "background"
+    | "status"
+    | "complete";
+  flowSince: number;
+  flowDue: number;
+  clientStatus: "PRONTO" | "ENVIANDO" | "RECEBIDO" | "CONCLUÍDO";
   jobs: Job[];
   workers: Worker[];
   attempts: number;
@@ -37,6 +50,7 @@ export const concurrencyDefaults: ConcurrencyConfig = {
   jobs: 1,
   delayB: 0,
   idempotent: false,
+  origin: "front",
 };
 export const RESERVATION_GAP = 1200;
 export function createConcurrency(
@@ -47,12 +61,11 @@ export function createConcurrency(
     clock: 0,
     running: false,
     started: false,
-    jobs: Array.from({ length: config.jobs }, (_, i) => ({
-      id: 42 + i,
-      status: "PENDENTE",
-      owner: null,
-      effects: 0,
-    })),
+    flow: "ready",
+    flowSince: 0,
+    flowDue: Infinity,
+    clientStatus: "PRONTO",
+    jobs: [],
     workers: ["A", "B"]
       .slice(0, config.workers)
       .map((id) => ({ id, phase: "idle", job: null, due: Infinity, since: 0 })),
@@ -80,14 +93,75 @@ export function startConcurrency(s: ConcurrencyState) {
   if (s.running || s.started) return false;
   s.started = true;
   s.running = true;
+  flow(s, "request", 600);
+  s.clientStatus = "ENVIANDO";
   log(
     s,
-    "API",
-    `${s.jobs.length} pedido(s) salvo(s) como PENDENTE. Resposta: recebido, ainda não concluído.`,
+    s.config.origin === "app" ? "APP" : "FRONT",
+    `Enviou POST /pedidos com ${s.config.jobs} pedido(s) de R$ 100 para a API.`,
   );
-  for (const w of s.workers)
-    phase(s, w, "query", w.id === "B" ? s.config.delayB : 0);
   return true;
+}
+function flow(
+  s: ConcurrencyState,
+  next: ConcurrencyState["flow"],
+  duration: number,
+) {
+  s.flow = next;
+  s.flowSince = s.clock;
+  s.flowDue = s.clock + duration;
+}
+function workersStart(s: ConcurrencyState) {
+  for (const w of s.workers)
+    phase(s, w, "query", 400 + (w.id === "B" ? s.config.delayB : 0));
+}
+function handleFlow(s: ConcurrencyState) {
+  if (s.flow === "request") {
+    flow(s, "api", 600);
+    log(
+      s,
+      "API",
+      "Recebeu o POST, leu os dados e validou o pedido. Ainda não há registro no banco.",
+    );
+  } else if (s.flow === "api") {
+    flow(s, "save", 600);
+    log(
+      s,
+      "API",
+      "Enviou INSERT para persistir o trabalho no banco. Não chamou os workers.",
+    );
+  } else if (s.flow === "save") {
+    s.jobs = Array.from({ length: s.config.jobs }, (_, i) => ({
+      id: 42 + i,
+      status: "PENDENTE",
+      owner: null,
+      effects: 0,
+    }));
+    flow(s, "accepted", 600);
+    log(
+      s,
+      "BANCO",
+      `Persistiu ${s.jobs.length} pedido(s) como PENDENTE. API devolve 202 + identificador ao cliente.`,
+    );
+  } else if (s.flow === "accepted") {
+    s.clientStatus = "RECEBIDO";
+    flow(s, "background", Infinity);
+    log(
+      s,
+      s.config.origin === "app" ? "APP" : "FRONT",
+      "Recebeu a confirmação: pedido aceito, processamento ainda pendente.",
+    );
+    workersStart(s);
+  } else if (s.flow === "status") {
+    s.clientStatus = "CONCLUÍDO";
+    flow(s, "complete", Infinity);
+    s.running = false;
+    log(
+      s,
+      s.config.origin === "app" ? "APP" : "FRONT",
+      "Consultou GET /pedidos/42 na API e atualizou a tela com o resultado gravado no banco.",
+    );
+  }
 }
 function handle(s: ConcurrencyState, w: Worker) {
   if (w.phase === "query") {
@@ -147,8 +221,17 @@ export function stepConcurrency(s: ConcurrencyState, ms: number) {
   const target = s.clock + ms;
   // Events sharing a timestamp use A then B: one possible real interleaving.
   for (let guard = 0; guard < 500; guard++) {
-    const due = Math.min(...s.workers.map((w) => w.due));
+    const due = Math.min(s.flowDue, ...s.workers.map((w) => w.due));
     if (!Number.isFinite(due)) {
+      if (s.flow === "background") {
+        flow(s, "status", 900);
+        log(
+          s,
+          s.config.origin === "app" ? "APP" : "FRONT",
+          "Consulta o status pela API; o worker não responde diretamente à tela.",
+        );
+        continue;
+      }
       s.running = false;
       return;
     }
@@ -157,16 +240,20 @@ export function stepConcurrency(s: ConcurrencyState, ms: number) {
       return;
     }
     s.clock = due;
+    if (s.flowDue === due) handleFlow(s);
     for (const w of s.workers) if (w.due === due) handle(s, w);
   }
   throw new Error("Concurrency simulation event budget exceeded");
 }
 export function retryConcurrency(s: ConcurrencyState) {
-  if (s.running || !s.started || s.jobs[0].status !== "CONCLUÍDO") return false;
+  if (s.running || !s.started || s.jobs[0]?.status !== "CONCLUÍDO")
+    return false;
   const job = s.jobs[0];
   job.status = "PENDENTE";
   job.owner = null;
   s.running = true;
+  s.clientStatus = "RECEBIDO";
+  flow(s, "background", Infinity);
   log(
     s,
     "API",
@@ -178,6 +265,83 @@ export function retryConcurrency(s: ConcurrencyState) {
   }
   return true;
 }
+export function nextConcurrencyDelay(s: ConcurrencyState) {
+  return Math.max(
+    0,
+    Math.min(s.flowDue, ...s.workers.map((w) => w.due)) - s.clock,
+  );
+}
+export const WORKER_FIRST_QUERY = 2800;
+export function concurrencyStage(s: ConcurrencyState) {
+  if (s.flow === "ready" || s.flow === "request") return 0;
+  if (s.flow === "api") return 1;
+  if (s.flow === "save" || s.flow === "accepted") return 2;
+  if (s.flow === "status" || s.flow === "complete") return 7;
+  if (s.workers.some((w) => w.phase === "write")) return 6;
+  if (s.workers.some((w) => w.phase === "process")) return 5;
+  if (s.workers.some((w) => w.phase === "read")) return 4;
+  return 3;
+}
+export const concurrencySteps = [
+  {
+    title: "Cliente envia",
+    actor: "APP OU FRONTEND",
+    action: "Um clique cria uma requisição HTTP para a API.",
+    data: "POST /pedidos · JSON com valor R$ 100",
+    result: "A solicitação viaja. O banco ainda está vazio.",
+  },
+  {
+    title: "API recebe",
+    actor: "API / BACKEND",
+    action: "A API lê o JSON, valida os dados e prepara a gravação.",
+    data: "Dados da requisição → registro de trabalho",
+    result: "Receber o pedido não executa a cobrança.",
+  },
+  {
+    title: "Banco persiste",
+    actor: "API → BANCO",
+    action: "A API grava PENDENTE e depois confirma o recebimento ao cliente.",
+    data: "INSERT pedido #42 · status PENDENTE",
+    result: "A resposta 202 indica aceitação. O trabalho termina depois.",
+  },
+  {
+    title: "Worker busca",
+    actor: "BACKGROUND / WORKERS",
+    action: "Os workers consultam o banco por iniciativa própria: polling.",
+    data: "SELECT pedidos WHERE status = PENDENTE",
+    result: "A API não empurra o pedido para o worker neste fluxo.",
+  },
+  {
+    title: "Disputa / reserva",
+    actor: "WORKER A + WORKER B",
+    action:
+      "Sem proteção, os dois podem ler o mesmo pendente antes de reservar.",
+    data: "Leitura local → tentativa de reserva",
+    result: "Na reserva atômica, só um fica com cada pedido.",
+  },
+  {
+    title: "Executa o efeito",
+    actor: "WORKER → PROCESSAMENTO",
+    action: "O worker executa a cobrança simulada na estação de processamento.",
+    data: "pedido:42 · aplicar R$ 100",
+    result:
+      "Duas execuções podem causar duas cobranças; idempotência protege o efeito.",
+  },
+  {
+    title: "Grava conclusão",
+    actor: "WORKER → BANCO",
+    action: "Depois do efeito, o worker atualiza o registro persistido.",
+    data: "UPDATE pedido SET status = CONCLUÍDO",
+    result: "O banco muda. A tela ainda precisa descobrir o resultado.",
+  },
+  {
+    title: "Tela consulta",
+    actor: "CLIENTE → API → BANCO",
+    action: "A tela consulta sua API e recebe o estado final do pedido.",
+    data: "GET /pedidos/42 · status CONCLUÍDO",
+    result: "Recebimento e conclusão são respostas em momentos diferentes.",
+  },
+];
 export function concurrencyStats(s: ConcurrencyState) {
   const effects = s.jobs.reduce((n, j) => n + j.effects, 0);
   const duplicates = s.jobs.reduce((n, j) => n + Math.max(0, j.effects - 1), 0);

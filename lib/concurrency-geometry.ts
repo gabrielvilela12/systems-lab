@@ -95,8 +95,8 @@ slab(
   "base",
   trim(CONCURRENCY_BASE, 0) + screws(CONCURRENCY_BASE, 0),
 );
-const ruler = { x: -159, y: 81, w: 318, d: 6, r: 1 };
-const ticks = k.topTicks(-155, 155, 5, 5, 81, 1, [2.5, 4], CP);
+const ruler = { x: -279, y: 113, w: 558, d: 6, r: 1 };
+const ticks = k.topTicks(-275, 275, 5, 5, 113, 1, [2.5, 4], CP);
 slab(
   "ruler",
   ruler,
@@ -106,158 +106,285 @@ slab(
   k.lineSvg(ticks.minor, { tone: "lo" }) +
     k.lineSvg(ticks.major, { tone: "mid" }),
 );
-const cartridge = { x: -29, y: -67, w: 58, d: 132, r: 5 };
-slab("register-plinth", cartridge, 0, 7, "register", screws(cartridge, 7));
+// Supported transport channels: laid out between equipment ports, on the chassis.
+const lanes = [
+  [-241, -67, 69, 6],
+  [-175, -61, 6, 49],
+  [-235, 56, 40, 6],
+  [-137, 21, 66, 6],
+  [-9, 21, 49, 6],
+  [34, -66, 6, 87],
+  [34, 27, 6, 41],
+  [40, -66, 33, 6],
+  [40, 62, 33, 6],
+  [143, -66, 94, 6],
+  [231, -60, 6, 48],
+  [143, 62, 94, 6],
+  [231, 43, 6, 19],
+];
+for (const [i, [x, y, w, d]] of lanes.entries()) {
+  const p = { x, y, w, d, r: 0.7 };
+  slab(
+    "transport-channel",
+    p,
+    0,
+    3,
+    "transport",
+    k.lineSvg(k.planOutline(k.insetPlan(p, 0.8), 3, CP), { tone: "lo" }),
+  );
+  const sides =
+    w > d
+      ? [
+          { x, y, w, d: 1, r: 0.3 },
+          { x, y: y + d - 1, w, d: 1, r: 0.3 },
+        ]
+      : [
+          { x, y, w: 1, d, r: 0.3 },
+          { x: x + w - 1, y, w: 1, d, r: 0.3 },
+        ];
+  for (const side of sides) slab("channel-guide", side, 3, 1, "transport");
+}
+// A phone on a charging cradle: one of two clients of the same API.
+const phone = { x: -281, y: -90, w: 40, d: 59, r: 5 };
+slab("phone-cradle", phone, 0, 5, "client", screws(phone, 5));
+slab("phone-body", { x: -276, y: -83, w: 30, d: 42, r: 4 }, 5, 7, "client");
+slab(
+  "phone-glass",
+  { x: -273, y: -79, w: 24, d: 32, r: 2 },
+  12,
+  1,
+  "client",
+  trim({ x: -273, y: -79, w: 24, d: 32, r: 2 }, 13),
+  { role: "client-screen", index: 0 },
+);
+slab("phone-button", { x: -265, y: -45, w: 8, d: 2, r: 1 }, 12, 1, "client");
+slab("phone-lens", { x: -263, y: -81, w: 4, d: 1, r: 0.4 }, 12, 1, "client");
+// A web terminal with a real upright screen and separate keyboard keys.
+const web = { x: -281, y: 33, w: 46, d: 49, r: 4 };
+slab("terminal-base", web, 0, 4, "client", screws(web, 4));
+slab(
+  "terminal-deck",
+  k.insetPlan(web, 2),
+  4,
+  5,
+  "client",
+  trim(k.insetPlan(web, 2), 9),
+);
+slab("monitor-foot", { x: -271, y: 35, w: 24, d: 12, r: 2 }, 9, 3, "client");
+slab("monitor-neck", { x: -264, y: 37, w: 10, d: 6, r: 1 }, 12, 9, "client");
+slab("monitor-case", { x: -274, y: 33, w: 34, d: 7, r: 1 }, 21, 23, "client");
+slab(
+  "monitor-window",
+  { x: -270, y: 40, w: 26, d: 1, r: 0.2 },
+  25,
+  15,
+  "client",
+  "",
+  { role: "client-screen", index: 1 },
+);
+for (let y = 0; y < 2; y++)
+  for (let x = 0; x < 3; x++)
+    slab(
+      "keyboard-key",
+      { x: -273 + x * 10, y: 57 + y * 9, w: 7, d: 6, r: 0.7 },
+      9,
+      1,
+      "client",
+    );
+// API rack: request validation, persistence and response, not the background worker.
+const api = { x: -195, y: -12, w: 58, d: 82, r: 4 };
+slab("api-plinth", api, 0, 6, "api", screws(api, 6));
+const rack = { x: -192, y: -9, w: 52, d: 76, r: 3 };
+slab(
+  "api-rack",
+  rack,
+  6,
+  49,
+  "api",
+  k.lineSvg(k.sideSeam(rack, 31, CP, 5), { tone: "lo" }),
+);
+slab("api-cover", rack, 55, 3, "api", trim(rack, 58) + screws(rack, 58));
+for (let i = 0; i < 3; i++) {
+  slab(
+    "api-server-blade",
+    { x: -187, y: 67, w: 42, d: 2, r: 0.6 },
+    14 + i * 12,
+    8,
+    "api",
+  );
+  slab(
+    "api-blade-led",
+    { x: -148, y: 69, w: 2, d: 1, r: 0.1 },
+    17 + i * 12,
+    2,
+    "api",
+  );
+}
+for (let i = 0; i < 4; i++)
+  slab(
+    "api-vent",
+    { x: -184, y: 1 + i * 15, w: 36, d: 3, r: 0.5 },
+    58,
+    1,
+    "api",
+  );
+slab(
+  "api-status-lamp",
+  { x: -170, y: 48, w: 8, d: 7, r: 1 },
+  58,
+  1,
+  "api",
+  "",
+  { role: "api" },
+);
+// Database: durable records stay in their slots while read copies travel to workers.
+const bank = { x: -71, y: -30, w: 62, d: 104, r: 4 };
+slab("register-plinth", bank, 0, 6, "register", screws(bank, 6));
 slab(
   "register-case",
-  k.insetPlan(cartridge, 3),
-  7,
-  11,
+  k.insetPlan(bank, 2),
+  6,
+  15,
   "register",
-  k.lineSvg(k.sideSeam(k.insetPlan(cartridge, 3), 12, CP, 5), { tone: "lo" }),
+  k.lineSvg(k.sideSeam(k.insetPlan(bank, 2), 13, CP, 5), { tone: "lo" }),
 );
 slab(
   "register-lid",
-  k.insetPlan(cartridge, 2),
-  18,
+  bank,
+  21,
   3,
   "register",
-  trim(k.insetPlan(cartridge, 2), 21) + screws(k.insetPlan(cartridge, 2), 21),
+  trim(bank, 24) + screws(bank, 24),
 );
 for (let i = 0; i < 4; i++) {
-  const slot = { x: -22, y: -55 + i * 28, w: 44, d: 22, r: 2 };
-  slab("card-seat", slot, 21, 2, "register", trim(slot, 23));
+  const slot = { x: -65, y: -19 + i * 21, w: 50, d: 17, r: 2 };
+  slab("card-seat", slot, 24, 2, "register", trim(slot, 26));
   slab(
     "record",
-    { x: -18, y: slot.y + 3, w: 27, d: 16, r: 1 },
-    23,
+    { x: -61, y: slot.y + 3, w: 31, d: 11, r: 1 },
+    26,
     2,
     "register",
-    k.lineSvg(
-      k.planOutline({ x: -15, y: slot.y + 6, w: 21, d: 2, r: 0.5 }, 25, CP),
-      { tone: "lo" },
-    ),
+    trim({ x: -61, y: slot.y + 3, w: 31, d: 11, r: 1 }, 28),
     { role: "record", index: i },
   );
   slab(
     "owner-lamp",
-    { x: 13, y: slot.y + 5, w: 5, d: 12, r: 1 },
-    23,
+    { x: -24, y: slot.y + 4, w: 5, d: 9, r: 1 },
+    26,
     2,
     "register",
     "",
     { role: "job", index: i },
   );
 }
-for (const [index, sign] of [-1, 1].entries()) {
-  const id = index === 0 ? "A" : "B",
-    group = `worker-${id}`;
-  const mount = { x: sign < 0 ? -161 : 44, y: -38, w: 117, d: 76, r: 5 };
-  slab("worker-plinth", mount, 0, 7, group, trim(mount, 7) + screws(mount, 7));
-  const motor = { x: sign < 0 ? -157 : 133, y: -27, w: 24, d: 54, r: 3 };
+// Independent background workers, each with its own reader on a supported rail.
+for (const [index, y] of [-63, 65].entries()) {
+  const group = `worker-${index === 0 ? "A" : "B"}`;
+  const mount = { x: 73, y: y - 26, w: 70, d: 52, r: 4 };
+  slab("worker-plinth", mount, 0, 6, group, trim(mount, 6) + screws(mount, 6));
+  const motor = { x: 77, y: y - 22, w: 17, d: 44, r: 2 };
   slab(
-    "motor",
+    "worker-motor",
     motor,
-    7,
-    25,
+    6,
+    20,
     group,
-    k.lineSvg(k.sideSeam(motor, 20, CP, 5), { tone: "lo" }),
+    k.lineSvg(k.sideSeam(motor, 16, CP, 5), { tone: "lo" }),
   );
-  slab(
-    "motor-cap",
-    k.insetPlan(motor, 1),
-    32,
-    3,
-    group,
-    screws(k.insetPlan(motor, 1), 35),
-  );
+  slab("worker-motor-cover", motor, 26, 3, group, screws(motor, 29));
   for (let i = 0; i < 3; i++)
     slab(
-      "motor-vent",
-      { x: motor.x + 5, y: -17 + i * 12, w: 14, d: 3, r: 0.8 },
-      35,
+      "motor-fin",
+      { x: 80, y: y - 15 + i * 12, w: 11, d: 3, r: 0.5 },
+      29,
       1,
       group,
     );
-  const railX = sign < 0 ? -130 : 46;
-  for (const y of [-22, 18]) {
-    for (const x of [railX, railX + 78])
-      slab(
-        "rail-mount",
-        { x, y: y - 2, w: 6, d: 8, r: 1 },
-        7,
-        5,
-        group,
-        screws({ x, y: y - 2, w: 6, d: 8, r: 1 }, 12),
-      );
-    slab(
-      "linear-rail",
-      { x: railX, y, w: 84, d: 4, r: 1 },
-      12,
-      4,
-      group,
-      trim({ x: railX, y, w: 84, d: 4, r: 1 }, 16),
-    );
-  }
-  for (const x of [railX, railX + 80])
-    slab("end-stop", { x, y: -15, w: 4, d: 30, r: 1 }, 7, 7, group);
-  const home = sign < 0 ? -116 : 116;
-  const extra = { move: [-sign * CARRIAGE_TRAVEL, 0, 0] as k.Point3 };
-  for (const y of [-22, 18])
+  for (const ry of [y - 16, y + 16])
+    slab("linear-rail", { x: 97, y: ry, w: 42, d: 4, r: 0.7 }, 6, 4, group);
+  for (const x of [95, 139])
+    slab("end-stop", { x, y: y - 10, w: 2, d: 24, r: 0.6 }, 6, 5, group);
+  const extra = { move: [CARRIAGE_TRAVEL, 0, 0] as k.Point3 };
+  for (const ry of [y - 16, y + 16])
     slab(
       "slide-shoe",
-      { x: home - 11, y, w: 22, d: 4, r: 0.8 },
-      16,
-      3,
+      { x: 98, y: ry, w: 14, d: 4, r: 0.5 },
+      10,
+      2,
       group,
       "",
       extra,
     );
-  const head = { x: home - 13, y: -25, w: 26, d: 50, r: 3 };
-  slab("reader-carriage", head, 19, 7, group, screws(head, 26), extra);
+  const head = { x: 96, y: y - 20, w: 18, d: 40, r: 2 };
+  slab("reader-carriage", head, 12, 3, group, screws(head, 15), extra);
+  const body = { x: 99, y: y - 13, w: 12, d: 26, r: 1 };
   slab(
     "reader-body",
-    { x: home - 10, y: -18, w: 20, d: 36, r: 2 },
-    26,
-    18,
+    body,
+    15,
+    16,
     group,
-    k.lineSvg(
-      k.sideSeam({ x: home - 10, y: -18, w: 20, d: 36, r: 2 }, 34, CP, 5),
-      { tone: "lo" },
-    ),
+    k.lineSvg(k.sideSeam(body, 24, CP, 5), { tone: "lo" }),
     extra,
   );
-  const visor = { x: home - 7, y: -12, w: 14, d: 24, r: 1.5 };
-  slab("reader-visor", visor, 44, 2, group, trim(visor, 46), extra);
+  slab("reader-cap", body, 31, 2, group, trim(body, 33), extra);
   slab(
     "reader-lamp",
-    { x: home - 3, y: -6, w: 6, d: 12, r: 1 },
-    46,
+    { x: 102, y: y - 5, w: 6, d: 10, r: 1 },
+    33,
     1,
     group,
     "",
     { ...extra, role: "worker", index },
   );
 }
-const meter = { x: -45, y: 69, w: 90, d: 10, r: 2 };
-slab("counter-plinth", meter, 0, 3, "counter", screws(meter, 3));
-const body = { x: -40, y: 69, w: 80, d: 10, r: 2 };
+// A separate effect station: the actual charge and its receipt counter.
+const effect = { x: 208, y: -12, w: 52, d: 55, r: 4 };
+slab("effect-plinth", effect, 0, 6, "counter", screws(effect, 6));
 slab(
-  "counter-case",
-  body,
-  3,
-  9,
+  "effect-case",
+  k.insetPlan(effect, 3),
+  6,
+  32,
   "counter",
-  k.lineSvg(k.sideSeam(body, 7, CP, 5), { tone: "lo" }),
+  k.lineSvg(k.sideSeam(k.insetPlan(effect, 3), 24, CP, 5), { tone: "lo" }),
 );
-slab("counter-bezel", { x: -37, y: 70, w: 74, d: 8, r: 1 }, 12, 1, "counter");
-const [tx, ty] = at([-12, 72, 14]);
+slab(
+  "effect-cover",
+  k.insetPlan(effect, 2),
+  38,
+  3,
+  "counter",
+  trim(k.insetPlan(effect, 2), 41) + screws(k.insetPlan(effect, 2), 41),
+);
+slab(
+  "effect-actuator",
+  { x: 218, y: 0, w: 32, d: 27, r: 3 },
+  41,
+  11,
+  "counter",
+);
+slab(
+  "effect-light",
+  { x: 229, y: 7, w: 10, d: 12, r: 1 },
+  52,
+  1,
+  "counter",
+  "",
+  { role: "effect" },
+);
+const receipt = { x: 177, y: 89, w: 83, d: 12, r: 2 };
+slab("receipt-plinth", receipt, 0, 3, "counter", screws(receipt, 3));
+slab("receipt-counter", k.insetPlan(receipt, 2), 3, 8, "counter");
+const screen = { x: 203, y: 92, w: 28, d: 7, r: 0.7 };
+const [tx, ty] = at([205, 93, 12]);
 const u = k.axisVector(CP, [1, 0, 0]),
   v = k.axisVector(CP, [0, 1, 0]);
 slab(
   "counter-screen",
-  { x: -14, y: 70, w: 28, d: 8, r: 1 },
-  13,
+  screen,
+  11,
   1,
   "counter",
   k.faceTextSvg(`matrix(${u[0]} ${u[1]} ${v[0]} ${v[1]} ${tx} ${ty})`, "0", {
@@ -266,6 +393,6 @@ slab(
   }),
   { role: "counter" },
 );
-for (const x of [-32, -24, 21, 29])
-  slab("counter-key", { x, y: 72, w: 5, d: 4, r: 0.7 }, 13, 1, "counter");
+for (const x of [184, 193, 237, 246])
+  slab("counter-key", { x, y: 94, w: 5, d: 4, r: 0.5 }, 11, 1, "counter");
 export const concurrencyHalo = k.haloOf(CONCURRENCY_BASE, -22, 11, CP);

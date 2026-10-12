@@ -14,6 +14,7 @@ import {
   Sun,
   Moon,
   Repeat2,
+  ZoomIn,
 } from "lucide-react";
 import { HubNav } from "./hub-nav";
 import {
@@ -24,6 +25,9 @@ import {
   retryConcurrency,
   concurrencyStats,
   workerLabels,
+  concurrencySteps,
+  concurrencyStage,
+  nextConcurrencyDelay,
   type ConcurrencyConfig,
 } from "../lib/concurrency-model";
 import {
@@ -31,6 +35,10 @@ import {
   CONCURRENCY_HEIGHT,
   CARRIAGE_TRAVEL,
   CP,
+  stationAnchors,
+  requestRoutes,
+  routePosition,
+  flowPacket,
 } from "../lib/concurrency-view";
 import { translateAlong, depthOf } from "./iso/iso-kit";
 const money = (value: number) =>
@@ -71,6 +79,8 @@ export function ConcurrencyLab({
     ...concurrencyDefaults,
   });
   const [snap, setSnap] = useState(() => createConcurrency());
+  const [zoom, setZoom] = useState(false);
+  const [inspect, setInspect] = useState<string | null>(null);
   const [paused, setPaused] = useState(true),
     [light, setLight] = useState(false),
     [preset, setPreset] = useState(0),
@@ -101,7 +111,9 @@ export function ConcurrencyLab({
     pause(true);
     drawRef.current();
     read();
-    setNotice("Experimento reiniciado. A API salvou as pendências simuladas.");
+    setNotice(
+      "Cliente pronto. O banco está vazio; acompanhe o pedido desde o envio.",
+    );
   }
   function change<K extends keyof ConcurrencyConfig>(
     key: K,
@@ -120,16 +132,23 @@ export function ConcurrencyLab({
     pause(false);
     read();
     wakeRef.current();
-    setNotice("Workers iniciados. Observe a reserva e o extrato.");
+    setNotice(
+      "Solicitação enviada. Acompanhe a API, o banco e o processamento posterior.",
+    );
   }
   function step() {
     takeControl();
     pause(true);
     if (!model.current.started) startConcurrency(model.current);
-    stepConcurrency(model.current, 400);
+    else {
+      const delay = nextConcurrencyDelay(model.current);
+      if (Number.isFinite(delay)) stepConcurrency(model.current, delay);
+    }
     drawRef.current();
     read();
-    setNotice("Avançou 400 ms no relógio do experimento.");
+    setNotice(
+      "Avançou até a próxima ação. Leia quem agiu e o que mudou na etapa atual.",
+    );
   }
   function retry() {
     takeControl();
@@ -142,6 +161,13 @@ export function ConcurrencyLab({
       );
     }
   }
+  useEffect(() => {
+    for (const el of stage.current?.querySelectorAll<SVGGElement>(
+      "[data-station]",
+    ) ?? []) {
+      el.setAttribute("data-inspected", String(el.dataset.station === inspect));
+    }
+  }, [inspect]);
   useEffect(() => {
     const host = stage.current!;
     const moving = [...host.querySelectorAll<SVGGElement>("[data-move]")];
@@ -159,6 +185,10 @@ export function ConcurrencyLab({
       ...host.querySelectorAll<SVGGElement>('[data-role="record"]'),
     ];
     const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    const packets = [...host.querySelectorAll<SVGGElement>("[data-packet]")];
+    const stationPieces = [
+      ...host.querySelectorAll<SVGGElement>("[data-station]"),
+    ];
     let frame = 0,
       last = 0,
       visible = false,
@@ -187,7 +217,7 @@ export function ConcurrencyLab({
             : positions[i] +
               (target - positions[i]) * (1 - Math.exp(-dt / 0.22));
         const transform = translateAlong(CP, [
-          (i === 0 ? 1 : -1) * CARRIAGE_TRAVEL * positions[i],
+          CARRIAGE_TRAVEL * positions[i],
           0,
           0,
         ]);
@@ -216,9 +246,7 @@ export function ConcurrencyLab({
           (el.dataset.move
             ? depthOf(
                 [
-                  (el.dataset.move === "A" ? 1 : -1) *
-                    CARRIAGE_TRAVEL *
-                    positions[el.dataset.move === "A" ? 0 : 1],
+                  CARRIAGE_TRAVEL * positions[el.dataset.move === "A" ? 0 : 1],
                   0,
                   0,
                 ],
@@ -232,6 +260,68 @@ export function ConcurrencyLab({
         paintOrder = sorted;
       }
       if (counter) counter.textContent = String(concurrencyStats(s).effects);
+      const current = concurrencyStage(s);
+      const activeStation = [
+        "client",
+        "api",
+        "register",
+        "register",
+        "register",
+        "counter",
+        "register",
+        "client",
+      ][current];
+      for (const el of stationPieces)
+        el.setAttribute(
+          "data-current",
+          String(el.dataset.station === activeStation),
+        );
+      const progress = (since: number, due: number) =>
+        Number.isFinite(due) && due > since
+          ? Math.max(0, Math.min(1, (s.clock - since) / (due - since)))
+          : 0;
+      const fp = progress(s.flowSince, s.flowDue);
+      for (const el of packets) {
+        const name = el.dataset.packet as keyof typeof requestRoutes;
+        let on = false,
+          p = 0,
+          reverse = false;
+        if (name === s.config.origin) {
+          on =
+            ["request", "accepted"].includes(s.flow) ||
+            (s.flow === "status" && (fp < 0.25 || fp >= 0.75));
+          p = fp;
+          reverse = s.flow === "accepted" || (s.flow === "status" && fp > 0.5);
+          if (s.flow === "status") p = fp < 0.25 ? fp * 4 : (fp - 0.75) * 4;
+        } else if (name === "save") {
+          on =
+            s.flow === "save" ||
+            (s.flow === "status" && fp >= 0.25 && fp < 0.75);
+          p = fp;
+          reverse = s.flow === "status" && fp > 0.5;
+          if (s.flow === "status")
+            p = fp < 0.5 ? (fp - 0.25) * 4 : (fp - 0.5) * 4;
+        } else {
+          const i = name === "a" || name === "effectA" ? 0 : 1;
+          const w = s.workers[i];
+          if (w) {
+            if (name === "a" || name === "b") {
+              on = ["query", "read", "write"].includes(w.phase);
+              p = progress(w.since, w.due);
+              reverse = w.phase === "query" || w.phase === "write";
+            } else {
+              on = w.phase === "process";
+              p = progress(w.since, w.due);
+            }
+          }
+        }
+        el.style.visibility = on ? "visible" : "hidden";
+        if (on)
+          el.setAttribute(
+            "transform",
+            translateAlong(CP, routePosition(requestRoutes[name], p, reverse)),
+          );
+      }
       if (clock.current)
         clock.current.textContent = `${(s.clock / 1000).toFixed(2)} s`;
     }
@@ -273,7 +363,7 @@ export function ConcurrencyLab({
           pause(true);
         }
       }
-      draw(dt);
+      if (visible) draw(dt);
       if (model.current.sequence !== lastSeq) {
         lastSeq = model.current.sequence;
         read();
@@ -291,15 +381,14 @@ export function ConcurrencyLab({
         return Math.abs(p - t) > 0.0005;
       });
       frame =
-        visible &&
-        ((!pauseRef.current && model.current.running) ||
-          movingNow ||
-          (!interacted.current && !reduced.matches))
+        (!pauseRef.current && model.current.running) ||
+        (visible && movingNow) ||
+        (visible && !interacted.current && !reduced.matches)
           ? requestAnimationFrame(tick)
           : 0;
     }
     function wake() {
-      if (!frame && visible) {
+      if (!frame && (visible || (!pauseRef.current && model.current.running))) {
         last = 0;
         frame = requestAnimationFrame(tick);
       }
@@ -309,7 +398,7 @@ export function ConcurrencyLab({
       (entries) => {
         visible = entries[entries.length - 1].isIntersecting;
         if (visible) wake();
-        else {
+        else if (pauseRef.current || !model.current.running) {
           cancelAnimationFrame(frame);
           frame = 0;
           last = 0;
@@ -368,6 +457,9 @@ export function ConcurrencyLab({
     };
   }, []);
   const stats = concurrencyStats(snap);
+  const currentStep = concurrencyStage(snap);
+  const detail = concurrencySteps[currentStep];
+  const selectedStation = stationAnchors.find((s) => s.id === inspect);
   return (
     <main className="hub-shell concurrency-lab">
       <HubNav active="concurrency" />
@@ -377,14 +469,14 @@ export function ConcurrencyLab({
             <span /> LAB 03 / ESTADO COMPARTILHADO
           </div>
           <h1>
-            Dois workers.
+            Do clique ao
             <br />
-            <span>Uma pendência.</span>
+            <span>trabalho concluído.</span>
           </h1>
           <p>
-            A API recebeu o pedido. Agora dois processos tentam executar o mesmo
-            trabalho. Veja quando a disputa vira uma cobrança duplicada — e como
-            coordenar a reserva.
+            App e frontend chamam a API. Ela salva uma pendência no banco; os
+            workers buscam e processam depois. Acompanhe cada passagem, descubra
+            onde nasce a disputa e como evitar uma cobrança duplicada.
           </p>
           <a href="#guia">
             <BookOpen size={14} /> Entender concorrência, reserva e idempotência{" "}
@@ -426,6 +518,7 @@ export function ConcurrencyLab({
           <div
             className="con-plate iso iso-plate"
             data-theme={light ? "light" : "dark"}
+            data-inspect={inspect ?? undefined}
             ref={stage}
             tabIndex={0}
             role="group"
@@ -444,7 +537,7 @@ export function ConcurrencyLab({
             }}
           >
             <div className="con-plate-top">
-              <span>FIG 04 / BANCADA DE RESERVA</span>
+              <span>FIG 04 / FLUXO COMPLETO</span>
               <button
                 onClick={() => setLight(!light)}
                 aria-label={
@@ -455,27 +548,122 @@ export function ConcurrencyLab({
               >
                 {light ? <Moon size={14} /> : <Sun size={14} />}
               </button>
+              <button
+                onClick={() => setZoom(!zoom)}
+                aria-pressed={zoom}
+                aria-label="Ampliar detalhes da figura"
+              >
+                <ZoomIn size={14} />
+              </button>
               <span>
                 {config.mode === "atomic"
                   ? "RESERVA ATÔMICA"
                   : "LEITURA SEPARADA"}
               </span>
             </div>
-            <svg
-              viewBox={`0 0 ${CONCURRENCY_WIDTH} ${CONCURRENCY_HEIGHT}`}
-              className="iso-svg"
-              role="img"
-              aria-label="Bancada isométrica com dois leitores sobre trilhos, cartucho central de pedidos e contador de efeitos"
-            >
-              {art}
-            </svg>
+            <div className="con-drawing" data-zoom={zoom}>
+              <svg
+                viewBox={`0 0 ${CONCURRENCY_WIDTH} ${CONCURRENCY_HEIGHT}`}
+                className="iso-svg"
+                role="img"
+                aria-label="Fluxo isométrico com app e frontend, rack da API, banco de pendências, dois workers e estação de processamento"
+              >
+                {art}
+                <g mask="url(#con-packet-occlusion)">
+                  {Object.keys(requestRoutes).map((name) => (
+                    <g
+                      key={name}
+                      data-packet={name}
+                      style={{ visibility: "hidden" }}
+                      dangerouslySetInnerHTML={{ __html: flowPacket }}
+                    />
+                  ))}
+                </g>
+              </svg>
+              <div className="con-station-pins" aria-hidden="true">
+                {stationAnchors.map((s, i) => (
+                  <span
+                    key={s.id}
+                    data-selected={inspect === s.id}
+                    style={{
+                      left: `${(s.at[0] / CONCURRENCY_WIDTH) * 100}%`,
+                      top: `${(s.at[1] / CONCURRENCY_HEIGHT) * 100}%`,
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                ))}
+              </div>
+            </div>
             <div className="con-plate-bottom">
-              <span>LEITOR A · BANCO COMPARTILHADO · LEITOR B</span>
+              <span>SIMULAÇÃO LOCAL · ETAPA {currentStep + 1}/8</span>
               <b ref={clock} data-readout>
                 0.00 s
               </b>
             </div>
           </div>
+          <div className="con-stations" aria-label="Estações da figura">
+            {stationAnchors.map((s) => (
+              <button
+                key={s.id}
+                aria-pressed={inspect === s.id}
+                onClick={() => setInspect(inspect === s.id ? null : s.id)}
+              >
+                <strong>{s.title}</strong>
+                <small>{s.hint}</small>
+              </button>
+            ))}
+          </div>
+          <p className="con-station-hint">
+            {selectedStation
+              ? `${selectedStation.title}: ${selectedStation.hint}. A estação está destacada na figura.`
+              : "Os números ligam as peças às estações. Clique em uma estação para destacá-la."}
+          </p>
+          <div className="con-steps" aria-label="Percurso do pedido">
+            {concurrencySteps.map((s, i) => (
+              <div
+                key={s.title}
+                aria-current={currentStep === i ? "step" : undefined}
+              >
+                <span>0{i + 1}</span>
+                {s.title}
+              </div>
+            ))}
+          </div>
+          <section
+            className="con-current"
+            aria-live="polite"
+            aria-label="Explicação da etapa atual"
+          >
+            <div>
+              <span>
+                ETAPA 0{currentStep + 1} · {detail.actor}
+              </span>
+              <h2>{detail.title}</h2>
+              <p>
+                {!snap.started
+                  ? "Pressione Próxima ação para enviar o pedido e acompanhar cada etapa sem pressa."
+                  : currentStep === 5 && config.mode === "atomic"
+                    ? "A verificação e a reserva aconteceram juntas: cada worker recebe um pedido disponível. Agora executa a cobrança."
+                    : detail.action}
+              </p>
+            </div>
+            <div>
+              <code>{detail.data}</code>
+              <p>{detail.result}</p>
+              <strong>
+                Tela do {config.origin === "app" ? "app" : "frontend"}:{" "}
+                {snap.clientStatus}
+              </strong>
+              <small>
+                {snap.clientStatus === "RECEBIDO"
+                  ? "HTTP 202: aceito. A cobrança ainda é trabalho do background."
+                  : snap.clientStatus === "CONCLUÍDO"
+                    ? "GET de status retornou o resultado. Compare também o extrato abaixo."
+                    : "A tela chama a API; o background consulta o banco."}
+              </small>
+            </div>
+          </section>
           <div className="con-legend">
             <span>
               <i />
@@ -510,7 +698,7 @@ export function ConcurrencyLab({
             </button>
             <button onClick={step} disabled={snap.started && !snap.running}>
               <SkipForward size={15} />
-              Passo +400 ms
+              Próxima ação
             </button>
             <button onClick={() => reset()} aria-label="Reiniciar experimento">
               <RotateCcw size={15} />
@@ -520,7 +708,7 @@ export function ConcurrencyLab({
               disabled={
                 snap.running ||
                 !snap.started ||
-                snap.jobs[0].status !== "CONCLUÍDO"
+                snap.jobs[0]?.status !== "CONCLUÍDO"
               }
             >
               <Repeat2 size={14} />
@@ -621,7 +809,19 @@ export function ConcurrencyLab({
             </select>
           </label>
           <label>
-            Pedidos pendentes
+            Origem da solicitação
+            <select
+              value={config.origin}
+              onChange={(e) =>
+                change("origin", e.target.value as ConcurrencyConfig["origin"])
+              }
+            >
+              <option value="front">Frontend web</option>
+              <option value="app">App móvel</option>
+            </select>
+          </label>
+          <label>
+            Pedidos enviados à API
             <select
               value={config.jobs}
               onChange={(e) => change("jobs", Number(e.target.value))}
@@ -701,6 +901,13 @@ export function ConcurrencyLab({
                 </tr>
               </thead>
               <tbody>
+                {!snap.jobs.length && (
+                  <tr>
+                    <td colSpan={4}>
+                      Banco vazio: a API ainda não persistiu o pedido.
+                    </td>
+                  </tr>
+                )}
                 {snap.jobs.map((j) => (
                   <tr key={j.id}>
                     <td>#{j.id}</td>
