@@ -1,6 +1,14 @@
 # Systems Lab · Hub de estudos de backend
 
-A Next.js + TypeScript study hub with interactive HTTP and RabbitMQ laboratories. The homepage links to `/labs/http/` and `/labs/rabbitmq/`, with clearly marked planned modules for databases, caching, security and distributed systems.
+A Next.js + TypeScript study hub with interactive Connections, HTTP and RabbitMQ laboratories. The homepage starts with `/labs/connections/` and also links to `/labs/http/` and `/labs/rabbitmq/`, with clearly marked planned modules for databases, caching, security and distributed systems.
+
+## Connections laboratory
+
+An eight-step walkthrough follows a form click through React event binding, a browser-side object, JSON serialization, fetch, HTTP transport, Next.js route selection, server-side JSON parsing, response creation and UI rendering. Each step highlights the corresponding frontend/backend example code and displays the representation of the same configurable product and quantity. Manual steps and a pausable replay use the existing audited HTTP machine art; no new physical geometry is introduced.
+
+A separate deterministic communication model compares HTTP request/response, polling, SSE, WebSocket and webhook with browser/backend/provider actors, directional packets, logs, request/frame counts, network latency, polling interval and connect/disconnect controls. SSE and WebSocket start with a handshake. Old session frames cannot reopen or update a disconnected channel. Polling repeats ordinary HTTP queries; SSE sends backend events over one HTTP stream; WebSocket supports both directions after the illustrated HTTP/1.1 Upgrade. Webhook POSTs originate at an external provider, mutate backend state and return an HTTP acknowledgement to that provider. The front remains unchanged until it consults its own API. The comparison is entirely local; code snippets illustrate real API syntax but are not executed as live servers or external integrations. TLS, CORS/preflight and domain resolution are explained separately.
+
+Eight connection model tests supplement the existing twenty tests. Sources: [Fetch](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch), [SSE](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events), [WebSocket](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API), [Webhooks](https://docs.github.com/en/webhooks/about-webhooks), [Next.js route handlers](https://nextjs.org/docs/app/getting-started/route-handlers).
 
 ## HTTP laboratory
 

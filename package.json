@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "node scripts/serve.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test lib/model.test.ts lib/http-model.test.ts",
+    "test": "tsx --test lib/model.test.ts lib/http-model.test.ts lib/connections-model.test.ts",
     "geometry": "tsx scripts/geometry-audit.mjs",
     "geometry:http": "tsx scripts/http-geometry-audit.mjs"
   },

@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRight,
@@ -326,6 +327,10 @@ export function HttpLab({ art }: { art: ReactNode }) {
             Monte o request. Acompanhe o processamento. Descubra o que a
             resposta realmente diz.
           </p>
+          <Link href="/labs/connections" className="http-connections-link">
+            Entenda como o clique do frontend vira uma requisição{" "}
+            <ArrowRight size={12} />
+          </Link>
         </div>
         <div className="http-protocol-badge">
           <Globe size={21} />

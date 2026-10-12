@@ -3,7 +3,7 @@ import { Boxes, ArrowUpRight } from "lucide-react";
 export function HubNav({
   active = "home",
 }: {
-  active?: "home" | "http" | "rabbitmq";
+  active?: "home" | "http" | "rabbitmq" | "connections";
 }) {
   return (
     <header className="hub-nav">
@@ -18,6 +18,12 @@ export function HubNav({
       <nav aria-label="Laboratórios">
         <Link href="/" aria-current={active === "home" ? "page" : undefined}>
           Visão geral
+        </Link>
+        <Link
+          href="/labs/connections"
+          aria-current={active === "connections" ? "page" : undefined}
+        >
+          Conexões
         </Link>
         <Link
           href="/labs/http"

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "../components/iso/iso.css";
 import "./globals.css";
 import "./hub.css";
+import "./connections.css";
 export const metadata: Metadata = {
   title: "Systems Lab · Hub de estudos de backend",
   description:

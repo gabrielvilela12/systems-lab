@@ -1,5 +1,7 @@
 # Systems Lab
 
+The Connections lab bridges a UI action to the browser's serialized HTTP request, a server route handler, and the UI's returned data. Its eight steps illuminate the matching frontend/backend code. A second local model compares HTTP, polling, SSE, WebSocket and provider-originated webhooks. It makes ownership visible: a webhook updates backend state while the frontend stays unchanged until it requests or subscribes to an update. The original HTTP geometry is reused without structural changes.
+
 A shared study hub now introduces two runnable laboratories. HTTP uses a workstation, request/response tracks, latency instrument and a three-drawer server rack. Its model owns request snapshots, server-side side effects, client outcomes, phase timing and challenge completion. A timeout ends the client's wait while the server can still process and mutate its data. The diagram is paused by reduced motion and supports manual steps. Future modules are marked as planned and have no pretend navigation.
 
 ## The message machine

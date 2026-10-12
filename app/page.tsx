@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Activity,
   Check,
+  Plug,
 } from "lucide-react";
 import { HubNav } from "../components/hub-nav";
 import { HttpArt } from "../components/http-art";
@@ -59,8 +60,8 @@ export default function Page() {
             quando falham.
           </p>
           <div className="hub-hero-actions">
-            <Link href="/labs/http" className="hub-primary">
-              Explorar HTTP <ArrowRight size={17} />
+            <Link href="/labs/connections" className="hub-primary">
+              Entender as conexões <ArrowRight size={17} />
             </Link>
             <a href="#laboratorios" className="hub-secondary">
               Ver laboratórios <ArrowUpRight size={16} />
@@ -106,9 +107,33 @@ export default function Page() {
             <span className="hub-eyebrow">ESCOLHA UM EXPERIMENTO</span>
             <h2>Seu próximo conceito, na prática.</h2>
           </div>
-          <span className="hub-count">02 LABORATÓRIOS ATIVOS</span>
+          <span className="hub-count">03 LABORATÓRIOS ATIVOS</span>
         </div>
         <div className="hub-lab-grid">
+          <Link
+            href="/labs/connections"
+            className="hub-lab-card connection-card"
+          >
+            <div className="hub-card-top">
+              <Plug size={24} />
+              <span>00 / COMECE AQUI</span>
+            </div>
+            <h3>Conexões</h3>
+            <p>
+              Do clique à função no servidor. Descubra quem envia cada mensagem.
+            </p>
+            <div className="hub-tags">
+              <span>Front → back</span>
+              <span>WebSocket</span>
+              <span>Webhook</span>
+            </div>
+            <div className="hub-card-bottom">
+              <span>8 etapas + 5 formas de comunicação</span>
+              <span>
+                Abrir laboratório <ArrowRight size={15} />
+              </span>
+            </div>
+          </Link>
           <Link href="/labs/http" className="hub-lab-card http-card">
             <div className="hub-card-top">
               <Globe size={24} />
