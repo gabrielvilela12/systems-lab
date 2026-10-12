@@ -33,6 +33,11 @@ const stations = {
     subtitle: "ESTADO COMPARTILHADO",
     Icon: Database,
   },
+  "register-final": {
+    title: "08 · Banco / conclusão",
+    subtitle: "MESMO BANCO DA ETAPA 04",
+    Icon: Database,
+  },
   "worker-A": {
     title: "Worker A",
     subtitle: "PROCESSO EM BACKGROUND",
@@ -243,7 +248,7 @@ export function ConcurrencyInspector({
                 : "Depois de persistir, a API devolve 202 com o identificador. A cobrança fica para o background; o resultado final poderá ser consultado em GET /pedidos/42."}
             </div>
           </>
-        ) : station === "register" ? (
+        ) : station === "register" || station === "register-final" ? (
           <>
             <p>
               Uma tabela de pedidos é a ponte entre a API e o background. Os
@@ -264,9 +269,11 @@ export function ConcurrencyInspector({
               }))}
             />
             <div className="con-inspect-note">
-              PENDENTE → PROCESSANDO → CONCLUÍDO. A API cria a linha; o worker
-              reserva e atualiza. O status final sozinho não revela uma cobrança
-              duplicada.
+              As peças 04 e 08 representam o mesmo banco de dados, com os mesmos
+              registros. Ele aparece duas vezes para acompanhar as ações da
+              esquerda para a direita. PENDENTE → PROCESSANDO → CONCLUÍDO. A API
+              cria a linha; o worker reserva e atualiza. O status final sozinho
+              não revela uma cobrança duplicada.
             </div>
           </>
         ) : station === "counter" ? (
@@ -327,15 +334,15 @@ export function ConcurrencyInspector({
                       pedido: worker.job,
                       caminhoAtual:
                         worker.phase === "query"
-                          ? "Worker → Banco: consulta"
+                          ? "Worker → Banco 08: consulta"
                           : ["read", "receive"].includes(worker.phase)
-                            ? "Banco → Worker: dados do pedido"
+                            ? "Banco 08 → Worker: dados do pedido (resposta)"
                             : worker.phase === "process"
                               ? "Worker → Processamento: executar"
                               : worker.phase === "result"
                                 ? "Processamento → Worker: resultado"
                                 : worker.phase === "write"
-                                  ? "Worker → Banco: UPDATE de conclusão"
+                                  ? "Worker → Banco 08: UPDATE de conclusão"
                                   : null,
                       resultadoRecebido: worker.phase === "write",
                       leituraLocal:

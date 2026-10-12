@@ -1,7 +1,7 @@
 import * as k from "../components/iso/iso-kit";
 export const CONCURRENCY_WIDTH = 1200,
   CONCURRENCY_HEIGHT = 620;
-export const CONCURRENCY_BASE = { x: -300, y: -133, w: 600, d: 266, r: 9 };
+export const CONCURRENCY_BASE = { x: -300, y: -133, w: 748, d: 266, r: 9 };
 export const CP = k.fitProjection(
   [...k.boxCorners(CONCURRENCY_BASE, -22, 0), [-175, 30, 85], [245, 15, 64]],
   CONCURRENCY_WIDTH,
@@ -31,7 +31,7 @@ export const stationAnchors = [
   },
   {
     id: "register",
-    title: "04 · Banco",
+    title: "04 · Banco / pendências",
     hint: "Guarda os pendentes",
     at: concurrencyAt([-39, 25, 26]),
   },
@@ -53,6 +53,12 @@ export const stationAnchors = [
     hint: "Aplica a cobrança",
     at: concurrencyAt([233, 15, 50]),
   },
+  {
+    id: "register-final",
+    title: "08 · Banco / conclusão",
+    hint: "Mesmo banco da etapa 04",
+    at: concurrencyAt([366, 25, 26]),
+  },
 ];
 export const requestRoutes = {
   app: [
@@ -68,18 +74,6 @@ export const requestRoutes = {
     [-137, 24, 8],
     [-71, 24, 8],
   ],
-  a: [
-    [-9, 24, 8],
-    [37, 24, 8],
-    [37, -63, 8],
-    [73, -63, 8],
-  ],
-  b: [
-    [-9, 24, 8],
-    [37, 24, 8],
-    [37, 65, 8],
-    [73, 65, 8],
-  ],
   effectA: [
     [143, -63, 8],
     [234, -63, 8],
@@ -90,19 +84,14 @@ export const requestRoutes = {
     [234, 65, 8],
     [234, 43, 8],
   ],
-  returnA: [
+  databaseA: [
     [143, -63, 8],
-    [151, -63, 8],
-    [151, -105, 8],
-    [-40, -105, 8],
-    [-40, -30, 8],
+    [366, -63, 8],
+    [366, -30, 8],
   ],
-  returnB: [
+  databaseB: [
     [143, 65, 8],
-    [151, 65, 8],
-    [151, 105, 8],
-    [-40, 105, 8],
-    [-40, 74, 8],
+    [335, 65, 8],
   ],
 } satisfies Record<string, k.Point3[]>;
 export function routePosition(

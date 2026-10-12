@@ -989,7 +989,7 @@
 }
 .con-stations {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 7px;
   margin: 12px 0 0;
 }
@@ -1646,26 +1646,19 @@
 .con-plate[data-origin] [data-route-arrows][data-kind="result"] {
   fill: #80d7ad;
 }
-.con-plate [data-role="return-channel"] .iso-top {
-  fill: #39574b;
-}
 .con-plate[data-follow-worker="A"]
   :is(
-    [data-packet="b"],
+    [data-packet="databaseB"],
     [data-packet="effectB"],
-    [data-packet="returnB"],
-    [data-route-arrows="b"],
-    [data-route-arrows="effectB"],
-    [data-route-arrows="returnB"]
+    [data-route-arrows="databaseB"],
+    [data-route-arrows="effectB"]
   ),
 .con-plate[data-follow-worker="B"]
   :is(
-    [data-packet="a"],
+    [data-packet="databaseA"],
     [data-packet="effectA"],
-    [data-packet="returnA"],
-    [data-route-arrows="a"],
-    [data-route-arrows="effectA"],
-    [data-route-arrows="returnA"]
+    [data-route-arrows="databaseA"],
+    [data-route-arrows="effectA"]
   ) {
   opacity: 0.25;
 }
@@ -1696,9 +1689,6 @@
   :is(header button[aria-pressed="true"], li[aria-current="step"] > span) {
   border-color: #8d692d;
   color: #75501c;
-}
-.con-plate[data-theme="light"] [data-role="return-channel"] .iso-top {
-  fill: #8daf9c;
 }
 .con-plate[data-theme="light"][data-origin]
   [data-packet][data-kind="result"]

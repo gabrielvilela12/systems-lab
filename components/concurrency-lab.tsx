@@ -82,12 +82,12 @@ const presets = [
 const workerJourney = [
   {
     title: "Consulta",
-    route: "Worker → Banco",
+    route: "Worker → Banco 08",
     text: "O marcador cinza é uma pergunta: existe algum PENDENTE? Ainda não é o pedido indo para processar.",
   },
   {
     title: "Recebe / reserva",
-    route: "Banco → Worker",
+    route: "Banco 08 → Worker",
     text: "O banco devolve os dados. Na reserva atômica, já pertencem a este worker; no modo inseguro, ele ainda tenta reservar depois da leitura.",
   },
   {
@@ -102,8 +102,8 @@ const workerJourney = [
   },
   {
     title: "Grava no banco",
-    route: "Worker → Banco",
-    text: "O resultado segue pelo canal externo de retorno. Quando chega ao banco, o worker grava CONCLUÍDO. Depois consulta outra pendência.",
+    route: "Worker → Banco 08",
+    text: "O worker envia UPDATE para o banco 08, à direita. Ao chegar, grava CONCLUÍDO. É o mesmo banco da peça 04, repetido no desenho para manter o fluxo das ações.",
   },
 ];
 export function ConcurrencyLab({
@@ -344,7 +344,7 @@ export function ConcurrencyLab({
         if (followed && ["read", "receive", "result"].includes(followed.phase))
           activeStation = `worker-${followed.id}`;
         else if (followed?.phase === "process") activeStation = "counter";
-        else activeStation = "register";
+        else activeStation = "register-final";
       }
       for (const el of stationPieces)
         el.setAttribute(
@@ -377,20 +377,17 @@ export function ConcurrencyLab({
           if (s.flow === "status")
             p = fp < 0.5 ? (fp - 0.25) * 4 : (fp - 0.5) * 4;
         } else {
-          const i = ["a", "effectA", "returnA"].includes(name) ? 0 : 1;
+          const i = name.endsWith("A") ? 0 : 1;
           const w = s.workers[i];
           if (w) {
-            if (name === "a" || name === "b") {
-              on = ["query", "read", "receive"].includes(w.phase);
+            if (name.startsWith("database")) {
+              on = ["query", "read", "receive", "write"].includes(w.phase);
               p = progress(w.since, w.due);
-              reverse = w.phase === "query";
+              reverse = w.phase === "read" || w.phase === "receive";
               if (w.phase === "read") {
                 on = p < 0.5;
                 p *= 2;
               }
-            } else if (name.startsWith("return")) {
-              on = w.phase === "write";
-              p = progress(w.since, w.due);
             } else {
               on = w.phase === "process" || w.phase === "result";
               p = progress(w.since, w.due);
@@ -603,9 +600,7 @@ export function ConcurrencyLab({
           <span>BANCO</span>
           <ArrowRight size={14} />
           <span>WORKERS</span>
-          <p>
-            Processamento → worker → banco: o resultado faz o caminho de volta.
-          </p>
+          <p>Chamadas seguem à direita. Respostas voltam pelo mesmo caminho.</p>
         </div>
       </section>
       <section className="con-presets" aria-label="Experimentos guiados">
@@ -858,7 +853,7 @@ export function ConcurrencyLab({
           <p className="con-station-hint">
             {selectedStation
               ? `${selectedStation.title}: conteúdo aberto. Avance uma ação no painel para ver os dados mudarem.`
-              : "Web azul · celular roxo. Clique diretamente em uma peça, no número ou no nome para ver seu conteúdo."}
+              : "04 e 08 são o mesmo banco, repetido para seguir o fluxo. Web azul · celular roxo. Clique nas peças para ver seu conteúdo."}
           </p>
           <div className="con-steps" aria-label="Percurso do pedido">
             {concurrencySteps.map((s, i) => (

@@ -353,7 +353,7 @@ export const concurrencySteps = [
     title: "Grava conclusão",
     actor: "WORKER → BANCO",
     action:
-      "O processamento devolve o resultado ao worker. Ele envia a atualização de volta ao banco pelo canal de retorno.",
+      "O processamento devolve o resultado ao worker. Ele faz uma nova chamada para gravar no banco 08, à direita. As peças 04 e 08 representam o mesmo banco.",
     data: "UPDATE pedido SET status = CONCLUÍDO",
     result: "O banco muda. A tela ainda precisa descobrir o resultado.",
   },

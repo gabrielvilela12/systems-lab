@@ -124,8 +124,11 @@ COMMIT;
           representam chamadas e dados; não existe um envio direto da API para o
           worker. A etapa de cobrança representa uma ação do worker em outra
           parte do sistema. Essa parte devolve o resultado ao worker, e o
-          próprio worker grava CONCLUÍDO de volta no banco. O banco não envia a
-          pendência por iniciativa própria: ele responde à consulta do worker.
+          próprio worker grava CONCLUÍDO no banco 08, à direita do desenho. As
+          peças 04 e 08 são duas representações do mesmo banco, com os mesmos
+          registros. Chamadas seguem para a direita; apenas as respostas voltam
+          pelo caminho. O banco não envia a pendência por iniciativa própria:
+          ele responde à consulta do worker.
         </p>
         <p>
           Use “Próxima ação” para ler uma passagem de cada vez. O exemplo usa

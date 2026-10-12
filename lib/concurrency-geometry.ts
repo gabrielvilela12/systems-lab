@@ -95,8 +95,8 @@ slab(
   "base",
   trim(CONCURRENCY_BASE, 0) + screws(CONCURRENCY_BASE, 0),
 );
-const ruler = { x: -279, y: 113, w: 558, d: 6, r: 1 };
-const ticks = k.topTicks(-275, 275, 5, 5, 113, 1, [2.5, 6], CP);
+const ruler = { x: -279, y: 113, w: 706, d: 6, r: 1 };
+const ticks = k.topTicks(-275, 423, 5, 5, 113, 1, [2.5, 6], CP);
 slab(
   "ruler",
   ruler,
@@ -112,21 +112,12 @@ const lanes = [
   [-175, -61, 6, 49],
   [-235, 56, 40, 6],
   [-137, 21, 66, 6],
-  [-9, 21, 49, 6],
-  [34, -66, 6, 87],
-  [34, 27, 6, 41],
-  [40, -66, 33, 6],
-  [40, 62, 33, 6],
   [143, -66, 94, 6],
   [231, -60, 6, 48],
-  [143, 62, 94, 6],
+  [143, 62, 192, 6],
   [231, 43, 6, 19],
-  [148, -108, 6, 42],
-  [-43, -108, 191, 6],
-  [-43, -102, 6, 72],
-  [148, 68, 6, 40],
-  [-43, 102, 191, 6],
-  [-43, 74, 6, 28],
+  [237, -66, 132, 6],
+  [363, -60, 6, 30],
 ];
 for (const [i, [x, y, w, d]] of lanes.entries()) {
   const p = { x, y, w, d, r: 0.7 };
@@ -137,7 +128,6 @@ for (const [i, [x, y, w, d]] of lanes.entries()) {
     3,
     "transport",
     k.lineSvg(k.planOutline(k.insetPlan(p, 0.8), 3, CP), { tone: "lo" }),
-    { role: i >= 13 ? "return-channel" : undefined },
   );
   const sides =
     w > d
@@ -149,10 +139,7 @@ for (const [i, [x, y, w, d]] of lanes.entries()) {
           { x, y, w: 1, d, r: 0.3 },
           { x: x + w - 1, y, w: 1, d, r: 0.3 },
         ];
-  for (const side of sides)
-    slab("channel-guide", side, 3, 1, "transport", "", {
-      role: i >= 13 ? "return-channel" : undefined,
-    });
+  for (const side of sides) slab("channel-guide", side, 3, 1, "transport");
 }
 // A phone on a charging cradle: one of two clients of the same API.
 const phone = { x: -281, y: -90, w: 40, d: 59, r: 5 };
@@ -248,46 +235,44 @@ slab(
   { role: "api" },
 );
 // Database: durable records stay in their slots while read copies travel to workers.
-const bank = { x: -71, y: -30, w: 62, d: 104, r: 4 };
-slab("register-plinth", bank, 0, 6, "register", screws(bank, 6));
-slab(
-  "register-case",
-  k.insetPlan(bank, 2),
-  6,
-  15,
-  "register",
-  k.lineSvg(k.sideSeam(k.insetPlan(bank, 2), 13, CP, 5), { tone: "lo" }),
-);
-slab(
-  "register-lid",
-  bank,
-  21,
-  3,
-  "register",
-  trim(bank, 24) + screws(bank, 24),
-);
-for (let i = 0; i < 4; i++) {
-  const slot = { x: -65, y: -19 + i * 21, w: 50, d: 17, r: 2 };
-  slab("card-seat", slot, 24, 2, "register", trim(slot, 26));
+function drawBank(x: number, group: string) {
+  const bank = { x, y: -30, w: 62, d: 104, r: 4 };
+  slab("register-plinth", bank, 0, 6, group, screws(bank, 6));
   slab(
-    "record",
-    { x: -61, y: slot.y + 3, w: 31, d: 11, r: 1 },
-    26,
-    2,
-    "register",
-    trim({ x: -61, y: slot.y + 3, w: 31, d: 11, r: 1 }, 28),
-    { role: "record", index: i },
+    "register-case",
+    k.insetPlan(bank, 2),
+    6,
+    15,
+    group,
+    k.lineSvg(k.sideSeam(k.insetPlan(bank, 2), 13, CP, 5), { tone: "lo" }),
   );
-  slab(
-    "owner-lamp",
-    { x: -24, y: slot.y + 4, w: 5, d: 9, r: 1 },
-    26,
-    2,
-    "register",
-    "",
-    { role: "job", index: i },
-  );
+  slab("register-lid", bank, 21, 3, group, trim(bank, 24) + screws(bank, 24));
+  for (let i = 0; i < 4; i++) {
+    const slot = { x: x + 6, y: -19 + i * 21, w: 50, d: 17, r: 2 };
+    slab("card-seat", slot, 24, 2, group, trim(slot, 26));
+    slab(
+      "record",
+      { x: x + 10, y: slot.y + 3, w: 31, d: 11, r: 1 },
+      26,
+      2,
+      group,
+      trim({ x: x + 10, y: slot.y + 3, w: 31, d: 11, r: 1 }, 28),
+      { role: "record", index: i },
+    );
+    slab(
+      "owner-lamp",
+      { x: x + 47, y: slot.y + 4, w: 5, d: 9, r: 1 },
+      26,
+      2,
+      group,
+      "",
+      { role: "job", index: i },
+    );
+  }
 }
+// One logical database, repeated at the last step to keep calls moving forward.
+drawBank(-71, "register");
+drawBank(335, "register-final");
 // Independent background workers, each with its own reader on a supported rail.
 for (const [index, y] of [-63, 65].entries()) {
   const group = `worker-${index === 0 ? "A" : "B"}`;
