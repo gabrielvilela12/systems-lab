@@ -13,6 +13,7 @@ import {
 import {
   concurrencyStats,
   workerLabels,
+  requestOrigins,
   type ConcurrencyState,
 } from "../lib/concurrency-model";
 
@@ -102,7 +103,9 @@ export function ConcurrencyInspector({
   }, [station]);
   const { title, subtitle, Icon } = stations[station];
   const client = station === "app" || station === "front";
-  const activeClient = client && state.config.origin === station;
+  const activeClient = client && requestOrigins(state.config).includes(station);
+  const clientJobs = state.jobs.filter((j) => j.origin === station);
+  const balanceMode = state.config.scenario === "balance";
   const worker = state.workers.find((w) => station === `worker-${w.id}`);
   const job = state.jobs.find((j) => j.id === worker?.job);
   const stats = concurrencyStats(state);
@@ -150,7 +153,9 @@ export function ConcurrencyInspector({
               <span>ESTADO DESTA TELA</span>
               <strong>
                 {activeClient
-                  ? state.clientStatus
+                  ? balanceMode && state.clientStatus === "CONCLUÍDO"
+                    ? clientJobs[0]?.outcome
+                    : state.clientStatus
                   : "SEM SOLICITAÇÃO NESTA RODADA"}
               </strong>
             </div>
@@ -158,8 +163,9 @@ export function ConcurrencyInspector({
               title="Formulário → corpo do POST"
               value={{
                 origem: station === "app" ? "app" : "web",
-                pedidos: state.config.jobs,
-                valorPorPedido: 100,
+                pedidos: balanceMode ? 1 : state.config.jobs,
+                valorPorPedido: balanceMode ? state.config.requestAmount : 100,
+                ...(balanceMode ? { conta: "conta:1" } : {}),
               }}
             />
             <DataBlock
@@ -179,15 +185,21 @@ export function ConcurrencyInspector({
                   : state.clientStatus === "CONCLUÍDO"
                     ? {
                         http: 200,
-                        consulta: "GET /pedidos/42",
-                        pedido: 42,
-                        status: "CONCLUÍDO",
+                        resultados: clientJobs.map((j) => ({
+                          consulta: `GET /pedidos/${j.id}`,
+                          pedido: j.id,
+                          status: j.status,
+                          resultado: j.outcome,
+                          valor: j.amount,
+                        })),
                       }
                     : {
                         http: 202,
-                        pedido: 42,
-                        status: "PENDENTE",
-                        consultarEm: "/pedidos/42",
+                        pedidos: clientJobs.map((j) => ({
+                          pedido: j.id,
+                          status: "PENDENTE",
+                          consultarEm: `/pedidos/${j.id}`,
+                        })),
                       }
               }
             />
@@ -226,11 +238,16 @@ export function ConcurrencyInspector({
               title="Requisição recebida"
               value={
                 state.started && state.flow !== "request"
-                  ? {
-                      origem: state.config.origin === "app" ? "app" : "web",
-                      pedidos: state.config.jobs,
-                      valorPorPedido: 100,
-                    }
+                  ? requestOrigins(state.config).map((origin) => ({
+                      origem: origin === "app" ? "app" : "web",
+                      pedidos: balanceMode ? 1 : state.config.jobs,
+                      valorPorPedido: balanceMode
+                        ? state.config.requestAmount
+                        : 100,
+                      ...(balanceMode
+                        ? { conta: "conta:1", enviadaEmMs: 0 }
+                        : {}),
+                    }))
                   : null
               }
             />
@@ -262,25 +279,31 @@ export function ConcurrencyInspector({
               title="Tabela pedidos · dados atuais"
               value={state.jobs.map((j) => ({
                 id: j.id,
-                origem: state.config.origin === "app" ? "app" : "web",
+                origem: j.origin === "app" ? "app" : "web",
                 status: j.status,
                 worker_id: j.owner,
                 cobrancas: j.effects,
+                valor: j.amount,
+                resultado: j.outcome,
               }))}
             />
             <div className="con-inspect-note">
               As peças 04 e 08 representam o mesmo banco de dados, com os mesmos
               registros. Ele aparece duas vezes para acompanhar as ações da
-              esquerda para a direita. PENDENTE → PROCESSANDO → CONCLUÍDO. A API
-              cria a linha; o worker reserva e atualiza. O status final sozinho
-              não revela uma cobrança duplicada.
+              esquerda para a direita. PENDENTE → PROCESSANDO → CONCLUÍDO ou
+              RECUSADO. A API cria a linha; o worker reserva e atualiza. O
+              status final sozinho não revela uma cobrança duplicada.
             </div>
           </>
         ) : station === "counter" ? (
           <>
             <p>
               Representa outra parte do sistema que aplica o efeito solicitado
-              pelo worker: aqui, uma cobrança didática de R$ 100.
+              pelo worker: uma cobrança didática
+              {balanceMode
+                ? ` de R$ ${state.config.requestAmount} da conta:1. Sem saldo, responde SEM_SALDO e não debita`
+                : " de R$ 100"}
+              .
             </p>
             <DataBlock
               title="Extrato do processamento"
@@ -298,7 +321,8 @@ export function ConcurrencyInspector({
                 pedido: j.id,
                 chave: `pedido:${j.id}`,
                 cobrancas: j.effects,
-                totalReais: j.effects * 100,
+                totalReais: j.effects * j.amount,
+                resultado: j.outcome,
               }))}
             />
             <div className="con-inspect-note">
@@ -320,7 +344,9 @@ export function ConcurrencyInspector({
               <span>ATIVIDADE ATUAL</span>
               <strong>
                 {worker
-                  ? workerLabels[worker.phase]
+                  ? balanceMode && worker.phase === "process"
+                    ? "Conferindo saldo e débito"
+                    : workerLabels[worker.phase]
                   : "DESATIVADO NESTA RODADA"}
               </strong>
             </div>
@@ -332,6 +358,8 @@ export function ConcurrencyInspector({
                       worker: worker.id,
                       fase: worker.phase,
                       pedido: worker.job,
+                      saldoLidoAntesDoDebito: worker.balanceRead,
+                      resultadoDoProcessamento: worker.outcome,
                       caminhoAtual:
                         worker.phase === "query"
                           ? "Worker → Banco 08: consulta"
@@ -367,6 +395,42 @@ export function ConcurrencyInspector({
               {state.config.mode === "unsafe"
                 ? "Leitura e reserva separadas: outro worker pode ler o mesmo PENDENTE. Uma cópia local antiga não garante que a linha ainda esteja disponível."
                 : "Reserva atômica: verificar e reservar acontecem juntos. Se outro worker já pegou a linha, este procura outra pendência."}
+            </div>
+          </>
+        )}
+        {balanceMode && (
+          <>
+            <DataBlock
+              title="Conta compartilhada · estado atual"
+              value={{
+                conta: "conta:1",
+                saldoInicial: state.config.initialBalance,
+                saldoAtual: state.balance,
+                protecao:
+                  state.config.balanceGuard === "atomic"
+                    ? "conferir e debitar juntos"
+                    : "leitura antiga seguida de débito",
+                workers: state.config.workers,
+              }}
+            />
+            <DataBlock
+              title="Extrato · decisões do processamento"
+              value={state.ledger.map((entry) => ({
+                pedido: entry.job,
+                origem: entry.origin === "front" ? "PC" : "celular",
+                worker: entry.worker,
+                valor: entry.amount,
+                saldoUsadoNaDecisao: entry.read,
+                saldoAntes: entry.before,
+                saldoDepois: entry.after,
+                resultado: entry.outcome,
+              }))}
+            />
+            <div className="con-inspect-note">
+              #42 e #43 são operações diferentes para a mesma conta.
+              Idempotência por pedido não protege o saldo entre essas duas
+              operações. A reserva do pedido e o débito da conta precisam das
+              respectivas proteções.
             </div>
           </>
         )}

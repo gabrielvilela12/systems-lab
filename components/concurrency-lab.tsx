@@ -24,6 +24,8 @@ import {
 } from "./concurrency-inspector";
 import {
   concurrencyDefaults,
+  balanceDefaults,
+  requestOrigins,
   createConcurrency,
   startConcurrency,
   stepConcurrency,
@@ -53,7 +55,7 @@ const money = (value: number) =>
     currency: "BRL",
     maximumFractionDigits: 0,
   });
-const presets = [
+const chargePresets = [
   {
     title: "1. Siga um pedido até voltar ao banco",
     text: "Um worker. Consulta, recebe, processa e devolve o resultado ao banco.",
@@ -77,6 +79,28 @@ const presets = [
       mode: "atomic" as const,
       idempotent: true,
     },
+  },
+];
+const balancePresets = [
+  {
+    title: "1. PC + celular na mesma fila",
+    text: "Saldo de R$ 100. Dois pedidos de R$ 100; um worker atende um por vez.",
+    config: { ...balanceDefaults },
+  },
+  {
+    title: "2. Dois workers, saldo sem proteção",
+    text: "Pedidos diferentes, mesma conta. Os dois podem conferir o saldo antigo e gastar demais.",
+    config: { ...balanceDefaults, workers: 2, balanceGuard: "unsafe" as const },
+  },
+  {
+    title: "3. Dois workers, débito atômico",
+    text: "Conferir e debitar juntos. Só um pedido consegue gastar os R$ 100 disponíveis.",
+    config: { ...balanceDefaults, workers: 2 },
+  },
+  {
+    title: "4. Saldo suficiente para os dois",
+    text: "Cada tela pede R$ 50. Ambos são aprovados; saldo final de R$ 0.",
+    config: { ...balanceDefaults, requestAmount: 50 },
   },
 ];
 const workerJourney = [
@@ -114,9 +138,11 @@ export function ConcurrencyLab({
   guide: ReactNode;
 }) {
   const [config, setConfig] = useState<ConcurrencyConfig>({
-    ...presets[0].config,
+    ...balancePresets[0].config,
   });
-  const [snap, setSnap] = useState(() => createConcurrency(presets[0].config));
+  const [snap, setSnap] = useState(() =>
+    createConcurrency(balancePresets[0].config),
+  );
   const [followWorker, setFollowWorker] = useState("A");
   const [speed, setSpeed] = useState(0.5);
   const speedRef = useRef(0.5);
@@ -129,7 +155,7 @@ export function ConcurrencyLab({
     [notice, setNotice] = useState(
       "Experimente a disputa ou avance um passo de cada vez.",
     );
-  const model = useRef(createConcurrency(presets[0].config)),
+  const model = useRef(createConcurrency(balancePresets[0].config)),
     pauseRef = useRef(true),
     stage = useRef<HTMLDivElement>(null),
     clock = useRef<HTMLElement>(null),
@@ -166,7 +192,7 @@ export function ConcurrencyLab({
   function reset(next: ConcurrencyConfig = config) {
     takeControl();
     model.current = createConcurrency(next);
-    setConfig({ ...next });
+    setConfig({ ...model.current.config });
     if (next.workers === 1) setFollowWorker("A");
     pause(true);
     drawRef.current();
@@ -301,11 +327,13 @@ export function ConcurrencyLab({
         const j = s.jobs[Number(el.dataset.index)];
         el.setAttribute("data-status", j?.status ?? "empty");
       }
-      for (const el of records)
+      for (const el of records) {
+        el.dataset.origin = s.jobs[Number(el.dataset.index)]?.origin ?? "front";
         el.setAttribute(
           "data-empty",
           String(!s.jobs[Number(el.dataset.index)]),
         );
+      }
       const sorted = [...pieces].sort((a, b) => {
         const key = (el: SVGGElement) =>
           Number(el.dataset.depth) +
@@ -349,7 +377,11 @@ export function ConcurrencyLab({
       for (const el of stationPieces)
         el.setAttribute(
           "data-current",
-          String(el.dataset.station === activeStation),
+          String(
+            el.dataset.station === activeStation ||
+              (activeStation === "both" &&
+                ["front", "app"].includes(el.dataset.station ?? "")),
+          ),
         );
       const progress = (since: number, due: number) =>
         Number.isFinite(due) && due > since
@@ -361,10 +393,15 @@ export function ConcurrencyLab({
         let on = false,
           p = 0,
           reverse = false;
-        if (name === s.config.origin) {
+        const origins = requestOrigins(s.config);
+        el.dataset.kind = "job";
+        el.dataset.origin = origins[0];
+        if (name === "app" || name === "front") {
+          el.dataset.origin = name;
           on =
-            ["request", "accepted"].includes(s.flow) ||
-            (s.flow === "status" && (fp < 0.25 || fp >= 0.75));
+            origins.includes(name) &&
+            (["request", "accepted"].includes(s.flow) ||
+              (s.flow === "status" && (fp < 0.25 || fp >= 0.75)));
           p = fp;
           reverse = s.flow === "accepted" || (s.flow === "status" && fp > 0.5);
           if (s.flow === "status") p = fp < 0.25 ? fp * 4 : (fp - 0.75) * 4;
@@ -376,10 +413,17 @@ export function ConcurrencyLab({
           reverse = s.flow === "status" && fp > 0.5;
           if (s.flow === "status")
             p = fp < 0.5 ? (fp - 0.25) * 4 : (fp - 0.5) * 4;
+          if (el.dataset.extra === "true") {
+            on = on && s.config.origin === "both" && p >= 0.18;
+            el.dataset.origin = origins[1] ?? origins[0];
+            p = Math.max(0, (p - 0.18) / 0.82);
+          }
         } else {
           const i = name.endsWith("A") ? 0 : 1;
           const w = s.workers[i];
           if (w) {
+            const job = s.jobs.find((j) => j.id === w.job);
+            el.dataset.origin = job?.origin ?? origins[0];
             if (name.startsWith("database")) {
               on = ["query", "read", "receive", "write"].includes(w.phase);
               p = progress(w.since, w.due);
@@ -401,16 +445,19 @@ export function ConcurrencyLab({
               w.phase === "query"
                 ? "query"
                 : ["result", "write"].includes(w.phase)
-                  ? "result"
+                  ? w.outcome === "SEM_SALDO"
+                    ? "rejected"
+                    : "result"
                   : "job";
           }
         }
         el.style.visibility = on ? "visible" : "hidden";
         const arrow = arrows.find((a) => a.dataset.routeArrows === name);
-        if (arrow) {
+        if (arrow && el.dataset.extra !== "true") {
           arrow.style.visibility = on ? "visible" : "hidden";
           arrow.dataset.reverse = String(reverse);
           arrow.dataset.kind = el.dataset.kind ?? "job";
+          arrow.dataset.origin = el.dataset.origin;
         }
         if (on)
           el.setAttribute(
@@ -454,7 +501,7 @@ export function ConcurrencyLab({
       ) {
         tourIdle += dt;
         if (tourIdle > 5) {
-          model.current = createConcurrency(presets[0].config);
+          model.current = createConcurrency(balancePresets[0].config);
           tourIdle = 0;
           pause(true);
         }
@@ -553,6 +600,9 @@ export function ConcurrencyLab({
     };
   }, []);
   const stats = concurrencyStats(snap);
+  const balanceMode = config.scenario === "balance";
+  const presets = balanceMode ? balancePresets : chargePresets;
+  const origins = requestOrigins(config);
   const currentStep = concurrencyStage(snap);
   const detail = concurrencySteps[currentStep];
   const followed = snap.workers.find((w) => w.id === followWorker);
@@ -583,9 +633,9 @@ export function ConcurrencyLab({
             <span>trabalho concluído.</span>
           </h1>
           <p>
-            App e frontend chamam a API. Ela salva uma pendência no banco; os
-            workers buscam e processam depois. Acompanhe cada passagem, descubra
-            onde nasce a disputa e como evitar uma cobrança duplicada.
+            PC e celular podem pedir ao mesmo tempo para gastar o saldo da mesma
+            conta. A API grava os pedidos; o background busca e processa.
+            Acompanhe a fila, o débito e a resposta de cada tela.
           </p>
           <a href="#guia">
             <BookOpen size={14} /> Entender concorrência, reserva e idempotência{" "}
@@ -603,6 +653,30 @@ export function ConcurrencyLab({
           <p>Chamadas seguem à direita. Respostas voltam pelo mesmo caminho.</p>
         </div>
       </section>
+      <div
+        className="con-scenarios"
+        role="group"
+        aria-label="Cenário do laboratório"
+      >
+        <button
+          aria-pressed={balanceMode}
+          onClick={() => {
+            setPreset(0);
+            reset(balancePresets[0].config);
+          }}
+        >
+          PC + celular · saldo compartilhado
+        </button>
+        <button
+          aria-pressed={!balanceMode}
+          onClick={() => {
+            setPreset(0);
+            reset(chargePresets[0].config);
+          }}
+        >
+          Disputa pelo mesmo pedido
+        </button>
+      </div>
       <section className="con-presets" aria-label="Experimentos guiados">
         {presets.map((p, i) => (
           <button
@@ -624,6 +698,128 @@ export function ConcurrencyLab({
       </section>
       <div className="con-workspace">
         <section className="con-machine-column">
+          {balanceMode && (
+            <section
+              className="con-account"
+              aria-label="Conta compartilhada e solicitações"
+            >
+              <header>
+                <div>
+                  <span>CONTA:1 · MESMA CONTA NAS DUAS TELAS</span>
+                  <strong data-negative={snap.balance < 0}>
+                    {money(snap.balance)}
+                  </strong>
+                  <small>
+                    Saldo inicial {money(config.initialBalance)} · débito local
+                    simulado
+                  </small>
+                </div>
+                <div className="con-account-action">
+                  <p>
+                    {config.workers === 1
+                      ? "Um worker: termina um pedido antes de buscar o próximo."
+                      : config.balanceGuard === "atomic"
+                        ? "Dois workers: cada débito confere e altera o saldo como uma unidade."
+                        : "Dois workers: leitura do saldo separada do débito. A cópia pode ficar antiga."}
+                  </p>
+                  <div>
+                    <button
+                      className="hub-primary"
+                      onClick={execute}
+                      disabled={snap.running}
+                    >
+                      <Play size={14} />
+                      {snap.running
+                        ? "Solicitações em andamento"
+                        : config.origin === "both"
+                          ? "Enviar PC + celular juntos"
+                          : "Enviar solicitação"}
+                    </button>
+                    <button
+                      onClick={step}
+                      disabled={snap.started && !snap.running}
+                    >
+                      <SkipForward size={14} />
+                      Próxima ação
+                    </button>
+                  </div>
+                </div>
+              </header>
+              <div className="con-client-requests">
+                {(["front", "app"] as const).map((origin) => {
+                  const active = origins.includes(origin);
+                  const j = snap.jobs.find((job) => job.origin === origin);
+                  return (
+                    <article
+                      key={origin}
+                      data-origin={origin}
+                      data-active={active}
+                    >
+                      <span>
+                        <i />
+                        {origin === "front" ? "PC / WEB" : "CELULAR / APP"}
+                        <b>
+                          {j
+                            ? `#${j.id}`
+                            : active
+                              ? `#${42 + origins.indexOf(origin)}`
+                              : "—"}
+                        </b>
+                      </span>
+                      <strong>{money(config.requestAmount)}</strong>
+                      <small>
+                        {!active
+                          ? "Não envia nesta rodada"
+                          : snap.flow === "complete"
+                            ? j?.outcome === "APROVADO"
+                              ? "200 · APROVADO"
+                              : "200 · SEM_SALDO"
+                            : snap.clientStatus === "RECEBIDO"
+                              ? "202 · recebido; aguarda resultado"
+                              : snap.clientStatus === "ENVIANDO"
+                                ? "POST enviado à API"
+                                : "Pronto para enviar"}
+                      </small>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="con-queue">
+                <span>FILA DE TRABALHO NO BANCO</span>
+                <ol>
+                  {snap.jobs.length ? (
+                    snap.jobs.map((j) => (
+                      <li
+                        key={j.id}
+                        data-origin={j.origin}
+                        data-status={j.status}
+                      >
+                        <i />
+                        <b>#{j.id}</b>
+                        <span>
+                          {j.status === "PENDENTE"
+                            ? "Aguardando vez"
+                            : j.status === "PROCESSANDO"
+                              ? `Worker ${j.owner} · processando`
+                              : j.outcome === "APROVADO"
+                                ? "Aprovado"
+                                : "Sem saldo"}
+                        </span>
+                      </li>
+                    ))
+                  ) : (
+                    <li>Os pedidos aparecem aqui depois de a API persistir.</li>
+                  )}
+                </ol>
+                <small>
+                  {config.origin === "both"
+                    ? `Envio simultâneo. Neste empate, ${config.firstOrigin === "front" ? "PC" : "celular"} entra primeiro; você pode inverter a ordem.`
+                    : "Uma solicitação nesta rodada."}{" "}
+                  O banco 04 e o banco 08 mostram esta mesma fila.
+                </small>
+              </div>
+            </section>
+          )}
           <div
             className="con-plate iso iso-plate"
             data-theme={light ? "light" : "dark"}
@@ -708,6 +904,12 @@ export function ConcurrencyLab({
                       dangerouslySetInnerHTML={{ __html: flowPacket }}
                     />
                   ))}
+                  <g
+                    data-packet="save"
+                    data-extra="true"
+                    style={{ visibility: "hidden" }}
+                    dangerouslySetInnerHTML={{ __html: flowPacket }}
+                  />
                 </g>
               </svg>
               <div
@@ -804,7 +1006,13 @@ export function ConcurrencyLab({
                 </b>
                 {" · "}
                 {journeyIndex >= 0
-                  ? workerJourney[journeyIndex].text
+                  ? balanceMode && journeyIndex >= 2
+                    ? journeyIndex === 2
+                      ? "O processamento confere o saldo da mesma conta para este pedido. Sem saldo, devolve uma recusa e não debita."
+                      : journeyIndex === 3
+                        ? `O resultado ${followed?.outcome ?? "do pedido"} volta ao worker. O status final ainda precisa ser gravado no banco.`
+                        : "O worker grava CONCLUÍDO / APROVADO ou RECUSADO / SEM_SALDO no banco 08. Depois busca outra pendência."
+                    : workerJourney[journeyIndex].text
                   : followed?.phase === "blocked"
                     ? "Este worker terminou sua busca nesta rodada. A tela consulta o resultado pela API."
                     : "O percurso tem ida e volta: a pergunta sai do worker, o pedido vem do banco e o resultado retorna ao banco."}
@@ -815,15 +1023,20 @@ export function ConcurrencyLab({
                   Cinza = consulta
                 </span>
                 <span>
-                  <i data-kind={config.origin} />
-                  {config.origin === "front"
-                    ? "Azul = pedido do web"
-                    : "Roxo = pedido do celular"}
+                  <i data-kind="front" /> Azul = pedido do PC
+                </span>
+                <span>
+                  <i data-kind="app" /> Roxo = pedido do celular
                 </span>
                 <span>
                   <i data-kind="result" />
                   Verde = resultado / conclusão
                 </span>
+                {balanceMode && (
+                  <span>
+                    <i data-kind="rejected" /> Vermelho = sem saldo
+                  </span>
+                )}
               </div>
             </section>
             <div className="con-plate-bottom">
@@ -879,19 +1092,44 @@ export function ConcurrencyLab({
               <p>
                 {!snap.started
                   ? "Pressione Próxima ação para enviar o pedido e acompanhar cada etapa sem pressa."
-                  : currentStep === 5 && config.mode === "atomic"
-                    ? "A verificação e a reserva aconteceram juntas: cada worker recebe um pedido disponível. Agora executa a cobrança."
-                    : currentStep === 4 && config.mode === "atomic"
-                      ? "O banco reservou cada pedido em uma operação atômica e devolve os dados ao worker responsável."
-                      : detail.action}
+                  : balanceMode
+                    ? [
+                        "PC e celular enviam pedidos HTTP independentes, no mesmo instante, para gastar da conta:1.",
+                        "A API recebe e valida cada pedido. Os dois usam a mesma conta, mas têm identificadores diferentes.",
+                        "Cada pedido vira PENDENTE. A tabela serve como fila de trabalho. A API responde 202: recebeu, ainda não aprovou o débito.",
+                        "O background consulta a fila no banco. Com um worker, só busca o segundo depois de finalizar o primeiro.",
+                        "O banco reserva um pedido para cada worker. Reservar a linha do pedido não protege automaticamente a linha da conta.",
+                        config.balanceGuard === "atomic"
+                          ? "O processamento confere o saldo atual e debita como uma operação atômica. Se não houver saldo, recusa sem debitar."
+                          : "O processamento conferiu uma cópia do saldo antes do débito. Dois workers podem ter lido R$ 100 e aprovar dois pedidos diferentes.",
+                        "O resultado volta ao worker. Ele grava APROVADO ou SEM_SALDO no banco 08, à direita, e então busca o próximo pedido.",
+                        "Cada tela consulta o próprio identificador pela API e recebe seu resultado final. Um POST 202 não era uma aprovação.",
+                      ][currentStep]
+                    : currentStep === 5 && config.mode === "atomic"
+                      ? "A verificação e a reserva aconteceram juntas: cada worker recebe um pedido disponível. Agora executa a cobrança."
+                      : currentStep === 4 && config.mode === "atomic"
+                        ? "O banco reservou cada pedido em uma operação atômica e devolve os dados ao worker responsável."
+                        : detail.action}
               </p>
             </div>
             <div>
-              <code>{detail.data}</code>
-              <p>{detail.result}</p>
+              <code>
+                {balanceMode
+                  ? `conta:1 · saldo ${money(snap.balance)} · ${snap.jobs.length || config.jobs} pedidos de ${money(config.requestAmount)}`
+                  : detail.data}
+              </code>
+              <p>
+                {balanceMode
+                  ? "Pedidos diferentes disputam o mesmo saldo. Só os aprovados aplicam débito."
+                  : detail.result}
+              </p>
               <strong>
-                Tela do {config.origin === "app" ? "app" : "frontend"}:{" "}
-                {snap.clientStatus}
+                {config.origin === "both"
+                  ? "PC + celular"
+                  : config.origin === "app"
+                    ? "Tela do app"
+                    : "Tela do frontend"}
+                : {snap.clientStatus}
               </strong>
               <small>
                 {snap.clientStatus === "RECEBIDO"
@@ -932,7 +1170,13 @@ export function ConcurrencyLab({
               ) : (
                 <Play size={15} />
               )}{" "}
-              {!paused && snap.running ? "Pausar" : "Executar"}
+              {!paused && snap.running
+                ? "Pausar"
+                : snap.started && snap.running
+                  ? "Continuar"
+                  : balanceMode && config.origin === "both"
+                    ? "Enviar PC + celular juntos"
+                    : "Executar"}
             </button>
             <button onClick={step} disabled={snap.started && !snap.running}>
               <SkipForward size={15} />
@@ -962,20 +1206,42 @@ export function ConcurrencyLab({
               <strong>{snap.attempts}</strong>
             </div>
             <div>
-              <span>TOTAL COBRADO</span>
+              <span>{balanceMode ? "TOTAL DEBITADO" : "TOTAL COBRADO"}</span>
               <strong>{money(stats.total)}</strong>
             </div>
             <div className={stats.duplicates ? "con-danger" : ""}>
-              <span>EFEITOS DUPLICADOS</span>
-              <strong>{stats.duplicates}</strong>
+              <span>
+                {balanceMode ? "RECUSADOS / SEM SALDO" : "EFEITOS DUPLICADOS"}
+              </span>
+              <strong>{balanceMode ? stats.rejected : stats.duplicates}</strong>
             </div>
             <div>
               <span>REPETIÇÕES BLOQUEADAS</span>
               <strong>{snap.skipped}</strong>
             </div>
           </div>
-          <div className="con-verdict" data-duplicate={stats.duplicates > 0}>
-            {stats.duplicates > 0 ? (
+          <div
+            className="con-verdict"
+            data-duplicate={stats.duplicates > 0 || snap.balance < 0}
+          >
+            {balanceMode ? (
+              <>
+                <strong>
+                  {snap.balance < 0
+                    ? "Dois pedidos diferentes gastaram o mesmo saldo."
+                    : snap.flow === "complete"
+                      ? `${stats.done} aprovado(s), ${stats.rejected} recusado(s). Saldo ${money(snap.balance)}.`
+                      : config.workers === 1
+                        ? "O primeiro termina. O segundo confere o saldo restante."
+                        : "Cada pedido tem sua reserva. A conta também precisa de proteção."}
+                </strong>
+                <p>
+                  {snap.balance < 0
+                    ? "Ambos leram R$ 100 antes do débito. Não houve pedido duplicado: o erro foi decidir com saldo antigo. Compare com débito atômico."
+                    : "Uma fila com um único worker processa esta rodada em sequência. Com vários workers, conferir e debitar a mesma conta precisa de coordenação no banco. Idempotência protege a repetição do mesmo pedido, não dois pedidos diferentes."}
+                </p>
+              </>
+            ) : stats.duplicates > 0 ? (
               <>
                 <strong>
                   A disputa ou repetição gerou cobrança duplicada.
@@ -1020,22 +1286,96 @@ export function ConcurrencyLab({
             <h2>Controle da disputa</h2>
           </div>
           <p>Mudar um controle reinicia o experimento.</p>
-          <div className="con-mode" role="group" aria-label="Tipo de reserva">
-            <button
-              aria-pressed={config.mode === "unsafe"}
-              onClick={() => change("mode", "unsafe")}
-            >
-              <ScanLine size={14} />
-              Sem proteção
-            </button>
-            <button
-              aria-pressed={config.mode === "atomic"}
-              onClick={() => change("mode", "atomic")}
-            >
-              <LockKeyhole size={14} />
-              Atômica
-            </button>
-          </div>
+          {balanceMode ? (
+            <>
+              <label>
+                Saldo inicial da conta
+                <select
+                  value={config.initialBalance}
+                  onChange={(e) =>
+                    change("initialBalance", Number(e.target.value))
+                  }
+                >
+                  {[0, 50, 100, 150, 200].map((n) => (
+                    <option key={n} value={n}>
+                      {money(n)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Valor solicitado por tela
+                <select
+                  value={config.requestAmount}
+                  onChange={(e) =>
+                    change("requestAmount", Number(e.target.value))
+                  }
+                >
+                  {[25, 50, 75, 100, 150].map((n) => (
+                    <option key={n} value={n}>
+                      {money(n)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Proteção do saldo
+                <select
+                  value={config.balanceGuard}
+                  onChange={(e) =>
+                    change(
+                      "balanceGuard",
+                      e.target.value as ConcurrencyConfig["balanceGuard"],
+                    )
+                  }
+                >
+                  <option value="atomic">
+                    Conferir + debitar juntos (atômico)
+                  </option>
+                  <option value="unsafe">
+                    Conferir antes, debitar depois (inseguro)
+                  </option>
+                </select>
+              </label>
+              <label>
+                Quem entra primeiro no empate?
+                <select
+                  value={config.firstOrigin}
+                  disabled={config.origin !== "both"}
+                  onChange={(e) =>
+                    change(
+                      "firstOrigin",
+                      e.target.value as ConcurrencyConfig["firstOrigin"],
+                    )
+                  }
+                >
+                  <option value="front">PC primeiro</option>
+                  <option value="app">Celular primeiro</option>
+                </select>
+              </label>
+              <p className="con-control-note">
+                Neste cenário, cada pedido sempre é reservado atomicamente. O
+                controle acima protege o saldo da conta, uma operação diferente.
+              </p>
+            </>
+          ) : (
+            <div className="con-mode" role="group" aria-label="Tipo de reserva">
+              <button
+                aria-pressed={config.mode === "unsafe"}
+                onClick={() => change("mode", "unsafe")}
+              >
+                <ScanLine size={14} />
+                Sem proteção
+              </button>
+              <button
+                aria-pressed={config.mode === "atomic"}
+                onClick={() => change("mode", "atomic")}
+              >
+                <LockKeyhole size={14} />
+                Atômica
+              </button>
+            </div>
+          )}
           <label>
             Workers ativos
             <select
@@ -1056,21 +1396,26 @@ export function ConcurrencyLab({
             >
               <option value="front">Frontend web</option>
               <option value="app">App móvel</option>
+              {balanceMode && (
+                <option value="both">PC + celular simultâneos</option>
+              )}
             </select>
           </label>
-          <label>
-            Pedidos enviados à API
-            <select
-              value={config.jobs}
-              onChange={(e) => change("jobs", Number(e.target.value))}
-            >
-              {[1, 2, 3, 4].map((n) => (
-                <option key={n} value={n}>
-                  {n} pedido{n > 1 ? "s" : ""} de R$ 100
-                </option>
-              ))}
-            </select>
-          </label>
+          {!balanceMode && (
+            <label>
+              Pedidos enviados à API
+              <select
+                value={config.jobs}
+                onChange={(e) => change("jobs", Number(e.target.value))}
+              >
+                {[1, 2, 3, 4].map((n) => (
+                  <option key={n} value={n}>
+                    {n} pedido{n > 1 ? "s" : ""} de R$ 100
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="con-delay">
             Atraso do worker B <b>{config.delayB} ms</b>
             <input
@@ -1084,7 +1429,9 @@ export function ConcurrencyLab({
               onChange={(e) => change("delayB", Number(e.target.value))}
             />
             <small>
-              Menos de 1.200 ms permite a leitura antiga no modo inseguro.
+              {balanceMode
+                ? "No modo inseguro, os dois podem ler o mesmo saldo se o atraso for menor que 800 ms."
+                : "Menos de 1.200 ms permite a leitura antiga no modo inseguro."}
             </small>
           </label>
           <label className="con-toggle">
@@ -1106,7 +1453,11 @@ export function ConcurrencyLab({
                   WORKER {w.id}
                   <b>{w.job ? `#${w.job}` : "—"}</b>
                 </span>
-                <strong>{workerLabels[w.phase]}</strong>
+                <strong>
+                  {balanceMode && w.phase === "process"
+                    ? "Conferindo saldo e débito"
+                    : workerLabels[w.phase]}
+                </strong>
                 <small>
                   {w.phase === "read"
                     ? "Cópia local: PENDENTE. A reserva ainda não aconteceu."
@@ -1148,13 +1499,25 @@ export function ConcurrencyLab({
                 )}
                 {snap.jobs.map((j) => (
                   <tr key={j.id}>
-                    <td>#{j.id}</td>
+                    <td>
+                      #{j.id}
+                      {balanceMode && (
+                        <small
+                          className="con-job-origin"
+                          data-origin={j.origin}
+                        >
+                          {j.origin === "front" ? "PC" : "CELULAR"}
+                        </small>
+                      )}
+                    </td>
                     <td>
                       <span data-status={j.status}>{j.status}</span>
                     </td>
                     <td>{j.owner ?? "—"}</td>
                     <td className={j.effects > 1 ? "con-danger" : ""}>
-                      {j.effects} × R$ 100
+                      {j.outcome === "SEM_SALDO"
+                        ? "SEM_SALDO · nenhum débito"
+                        : `${j.effects} × ${money(j.amount)}`}
                     </td>
                   </tr>
                 ))}

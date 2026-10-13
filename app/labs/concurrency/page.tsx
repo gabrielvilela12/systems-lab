@@ -5,7 +5,7 @@ import { ConcurrencyGuide } from "../../../components/concurrency-guide";
 export const metadata: Metadata = {
   title: "Concorrência · Systems Lab",
   description:
-    "Dois workers disputam pedidos pendentes. Explore condição de corrida, reserva atômica e idempotência em uma bancada interativa.",
+    "PC e celular enviam pedidos simultâneos para uma conta de R$ 100. Explore fila de trabalho, saldo compartilhado, débito atômico e idempotência.",
 };
 export default function ConcurrencyPage() {
   return (

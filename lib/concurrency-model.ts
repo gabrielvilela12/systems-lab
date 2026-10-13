@@ -1,17 +1,27 @@
 export type ClaimMode = "unsafe" | "atomic";
+export type ClientOrigin = "app" | "front";
+export type PaymentOutcome = "APROVADO" | "SEM_SALDO";
 export type ConcurrencyConfig = {
   mode: ClaimMode;
   workers: number;
   jobs: number;
   delayB: number;
   idempotent: boolean;
-  origin: "app" | "front";
+  origin: ClientOrigin | "both";
+  scenario: "charge" | "balance";
+  initialBalance: number;
+  requestAmount: number;
+  balanceGuard: ClaimMode;
+  firstOrigin: ClientOrigin;
 };
 export type Job = {
   id: number;
-  status: "PENDENTE" | "PROCESSANDO" | "CONCLUÍDO";
+  status: "PENDENTE" | "PROCESSANDO" | "CONCLUÍDO" | "RECUSADO";
   owner: string | null;
   effects: number;
+  origin: ClientOrigin;
+  amount: number;
+  outcome: PaymentOutcome | null;
 };
 export type Worker = {
   id: string;
@@ -27,6 +37,8 @@ export type Worker = {
   job: number | null;
   due: number;
   since: number;
+  balanceRead: number | null;
+  outcome: PaymentOutcome | null;
 };
 export type ConcurrencyState = {
   config: ConcurrencyConfig;
@@ -51,6 +63,18 @@ export type ConcurrencyState = {
   skipped: number;
   events: { id: number; time: number; worker: string; text: string }[];
   sequence: number;
+  balance: number;
+  ledger: {
+    job: number;
+    worker: string;
+    origin: ClientOrigin;
+    amount: number;
+    read: number;
+    before: number;
+    after: number;
+    outcome: PaymentOutcome;
+    time: number;
+  }[];
 };
 export const concurrencyDefaults: ConcurrencyConfig = {
   mode: "unsafe",
@@ -59,13 +83,37 @@ export const concurrencyDefaults: ConcurrencyConfig = {
   delayB: 0,
   idempotent: false,
   origin: "front",
+  scenario: "charge",
+  initialBalance: 100,
+  requestAmount: 100,
+  balanceGuard: "atomic",
+  firstOrigin: "front",
+};
+export const balanceDefaults: ConcurrencyConfig = {
+  ...concurrencyDefaults,
+  scenario: "balance",
+  origin: "both",
+  jobs: 2,
+  workers: 1,
+  mode: "atomic",
+  idempotent: true,
 };
 export const RESERVATION_GAP = 1200;
 export function createConcurrency(
   config: ConcurrencyConfig = concurrencyDefaults,
 ): ConcurrencyState {
+  // Distinct balance requests always get distinct reservations. Protecting the
+  // work item and protecting the shared account are separate operations.
+  const normalized =
+    config.scenario === "balance"
+      ? {
+          ...config,
+          mode: "atomic" as const,
+          jobs: config.origin === "both" ? 2 : 1,
+        }
+      : { ...config };
   return {
-    config: { ...config },
+    config: normalized,
     clock: 0,
     running: false,
     started: false,
@@ -74,13 +122,21 @@ export function createConcurrency(
     flowDue: Infinity,
     clientStatus: "PRONTO",
     jobs: [],
-    workers: ["A", "B"]
-      .slice(0, config.workers)
-      .map((id) => ({ id, phase: "idle", job: null, due: Infinity, since: 0 })),
+    workers: ["A", "B"].slice(0, normalized.workers).map((id) => ({
+      id,
+      phase: "idle",
+      job: null,
+      due: Infinity,
+      since: 0,
+      balanceRead: null,
+      outcome: null,
+    })),
     attempts: 0,
     skipped: 0,
     events: [],
     sequence: 0,
+    balance: normalized.initialBalance,
+    ledger: [],
   };
 }
 function log(s: ConcurrencyState, worker: string, text: string) {
@@ -103,12 +159,24 @@ export function startConcurrency(s: ConcurrencyState) {
   s.running = true;
   flow(s, "request", 600);
   s.clientStatus = "ENVIANDO";
-  log(
-    s,
-    s.config.origin === "app" ? "APP" : "FRONT",
-    `Enviou POST /pedidos com ${s.config.jobs} pedido(s) de R$ 100 para a API.`,
-  );
+  if (s.config.scenario === "balance") {
+    for (const origin of requestOrigins(s.config))
+      log(
+        s,
+        origin === "front" ? "PC" : "APP",
+        `Enviou POST /pedidos: gastar R$ ${s.config.requestAmount} da conta:1, no mesmo instante ${s.clock} ms.`,
+      );
+  } else
+    log(
+      s,
+      s.config.origin === "app" ? "APP" : "FRONT",
+      `Enviou POST /pedidos com ${s.config.jobs} pedido(s) de R$ 100 para a API.`,
+    );
   return true;
+}
+export function requestOrigins(config: ConcurrencyConfig): ClientOrigin[] {
+  if (config.origin !== "both") return [config.origin];
+  return [config.firstOrigin, config.firstOrigin === "front" ? "app" : "front"];
 }
 function flow(
   s: ConcurrencyState,
@@ -144,6 +212,9 @@ function handleFlow(s: ConcurrencyState) {
       status: "PENDENTE",
       owner: null,
       effects: 0,
+      origin: requestOrigins(s.config)[i % requestOrigins(s.config).length],
+      amount: s.config.scenario === "balance" ? s.config.requestAmount : 100,
+      outcome: null,
     }));
     flow(s, "accepted", 600);
     log(
@@ -167,7 +238,7 @@ function handleFlow(s: ConcurrencyState) {
     log(
       s,
       s.config.origin === "app" ? "APP" : "FRONT",
-      "Consultou GET /pedidos/42 na API e atualizou a tela com o resultado gravado no banco.",
+      `Cliente(s) consultaram a API: ${s.jobs.map((j) => `GET /pedidos/${j.id} → ${j.outcome ?? j.status}`).join("; ")}. Cada tela mostra seu próprio resultado.`,
     );
   }
 }
@@ -181,6 +252,7 @@ function handle(s: ConcurrencyState, w: Worker) {
       return;
     }
     w.job = job.id;
+    w.outcome = null;
     if (s.config.mode === "atomic") {
       job.status = "PROCESSANDO";
       job.owner = w.id;
@@ -192,6 +264,14 @@ function handle(s: ConcurrencyState, w: Worker) {
     }
   } else if (w.phase === "receive") {
     phase(s, w, "process", 800);
+    if (s.config.scenario === "balance" && s.config.balanceGuard === "unsafe") {
+      w.balanceRead = s.balance;
+      log(
+        s,
+        w.id,
+        `Processamento de #${w.job} leu saldo R$ ${s.balance}. Ainda não debitou: esta cópia pode ficar antiga.`,
+      );
+    }
     log(
       s,
       w.id,
@@ -209,10 +289,37 @@ function handle(s: ConcurrencyState, w: Worker) {
     s.attempts++;
     if (s.config.idempotent && job.effects > 0) {
       s.skipped++;
+      w.outcome = job.outcome;
       log(
         s,
         w.id,
         `Chave pedido:${job.id} já aplicada: bloqueou cobrança repetida.`,
+      );
+    } else if (s.config.scenario === "balance") {
+      const before = s.balance;
+      const read = s.config.balanceGuard === "atomic" ? before : w.balanceRead!;
+      w.outcome = read >= job.amount ? "APROVADO" : "SEM_SALDO";
+      if (w.outcome === "APROVADO") {
+        s.balance -= job.amount;
+        job.effects++;
+      }
+      s.ledger.push({
+        job: job.id,
+        worker: w.id,
+        origin: job.origin,
+        amount: job.amount,
+        read,
+        before,
+        after: s.balance,
+        outcome: w.outcome,
+        time: s.clock,
+      });
+      log(
+        s,
+        w.id,
+        w.outcome === "APROVADO"
+          ? `#${job.id} APROVADO: conferiu R$ ${read}; debitou R$ ${job.amount}. Saldo ${before} → ${s.balance}${s.balance < 0 ? " — SALDO NEGATIVO: leitura antiga" : ""}.`
+          : `#${job.id} SEM_SALDO: precisa de R$ ${job.amount}, disponível R$ ${read}. Nenhum débito.`,
       );
     } else {
       job.effects++;
@@ -232,9 +339,15 @@ function handle(s: ConcurrencyState, w: Worker) {
     );
   } else if (w.phase === "write") {
     const job = s.jobs.find((j) => j.id === w.job)!;
-    job.status = "CONCLUÍDO";
-    log(s, w.id, `Gravou #${job.id} como CONCLUÍDO.`);
+    job.outcome = w.outcome;
+    job.status = job.outcome === "SEM_SALDO" ? "RECUSADO" : "CONCLUÍDO";
+    log(
+      s,
+      w.id,
+      `Gravou #${job.id} como ${job.status}${job.outcome ? ` / ${job.outcome}` : ""}.`,
+    );
     w.job = null;
+    w.balanceRead = null;
     phase(s, w, "query", 250);
   }
 }
@@ -371,8 +484,9 @@ export function concurrencyStats(s: ConcurrencyState) {
   return {
     effects,
     duplicates,
-    total: effects * 100,
+    total: s.jobs.reduce((n, j) => n + j.effects * j.amount, 0),
     done: s.jobs.filter((j) => j.status === "CONCLUÍDO").length,
+    rejected: s.jobs.filter((j) => j.status === "RECUSADO").length,
   };
 }
 export const workerLabels: Record<Worker["phase"], string> = {

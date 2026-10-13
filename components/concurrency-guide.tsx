@@ -13,6 +13,68 @@ export function ConcurrencyGuide() {
       </p>
       <div className="con-guide-grid">
         <article>
+          <span>PC + CELULAR / MESMO SALDO</span>
+          <h3>Dois pedidos, uma conta de R$ 100</h3>
+          <p>
+            As telas enviam dois POSTs independentes. A API grava #42 e #43 como
+            PENDENTE e responde 202 para cada uma. Nesta simulação, a tabela de
+            pendências é a fila de trabalho.
+          </p>
+          <p>
+            Com um worker, ele pega #42, confere R$ 100, debita R$ 100 e grava
+            APROVADO. Só então pega #43: agora há R$ 0, então grava RECUSADO /
+            SEM_SALDO, sem débito. Cada tela consulta seu próprio pedido e
+            recebe seu resultado.
+          </p>
+          <p>
+            A fila não cria saldo e o 202 não aprova a compra. Neste empate, a
+            ordem de chegada é uma escolha do simulador; use o controle para
+            trocar PC e celular.
+          </p>
+        </article>
+        <article>
+          <span>DOIS WORKERS / DUAS RESERVAS</span>
+          <h3>A fila sozinha não protege a conta</h3>
+          <p>
+            Dois workers podem pegar pedidos diferentes simultaneamente. Cada
+            pedido tem sua reserva correta, mas ambos usam conta:1. Se ambos
+            lerem R$ 100 antes do débito e decidirem com essa cópia, podem
+            aprovar R$ 200.
+          </p>
+          <p>
+            O modo inseguro modela uma conferência separada de um débito
+            posterior. O saldo chega a −R$ 100. Outra implementação insegura
+            pode sobrescrever o saldo com um valor antigo; o erro depende de
+            como a gravação é feita.
+          </p>
+          <p>
+            Na proteção atômica, a conferência e o débito na conta acontecem
+            juntos. Depois de um worker debitar, o outro confere R$ 0 e recusa.
+            Um único worker só garante a sequência desta fila se não houver
+            outro caminho alterando a conta.
+          </p>
+        </article>
+        <article>
+          <span>ESCOLHA DA PROTEÇÃO</span>
+          <h3>Pedido, saldo e repetição</h3>
+          <p>
+            Reserva atômica: dois workers não pegam a mesma pendência. Débito
+            atômico: dois pedidos não gastam o mesmo saldo. Idempotência:
+            repetir o mesmo pedido não aplica o débito de novo.
+          </p>
+          <p>
+            Uma fila por conta com processamento exclusivo pode ordenar as
+            operações daquela conta. Em sistemas com vários processos ou outras
+            rotas de escrita, também é preciso coordenar as alterações no
+            armazenamento compartilhado.
+          </p>
+          <p>
+            Experimente pedir R$ 50 em cada tela: ambos cabem nos R$ 100. Depois
+            use “Reprocessar #42” para comparar a repetição de uma identidade
+            com dois pedidos realmente diferentes.
+          </p>
+        </article>
+        <article>
           <span>01 / A DISPUTA</span>
           <h3>Condição de corrida</h3>
           <p>
@@ -55,6 +117,36 @@ export function ConcurrencyGuide() {
           </p>
         </article>
       </div>
+      <details className="con-sql">
+        <summary>Como conferir e debitar o saldo atomicamente?</summary>
+        <p>
+          Para um saldo mantido no PostgreSQL, um UPDATE condicional pode fazer
+          as duas coisas na mesma instrução. Outra transação concorrente espera
+          e reavalia a condição na linha atualizada. Pedido e extrato devem ser
+          gravados numa transação compatível com a regra de negócio.
+        </p>
+        <pre>
+          <code>{`UPDATE contas
+SET saldo = saldo - :valor
+WHERE id = :conta AND saldo >= :valor
+RETURNING saldo;
+
+-- Uma linha retornada: débito aplicado.
+-- Nenhuma linha: não debitou. Com a conta previamente
+-- validada, responda SEM_SALDO no resultado do pedido.
+-- Chave única por pedido protege reprocessamentos.
+-- Este exemplo altera saldo local, não um provedor externo.`}</code>
+        </pre>
+        <p>
+          <a
+            href="https://www.postgresql.org/docs/current/transaction-iso.html"
+            target="_blank"
+            rel="noreferrer"
+          >
+            PostgreSQL · concorrência de UPDATE no isolamento Read Committed
+          </a>
+        </p>
+      </details>
       <details className="con-sql">
         <summary>Como uma reserva pode ser feita no banco?</summary>
         <p>
