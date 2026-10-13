@@ -1,80 +1,120 @@
-# Systems Lab · Hub de estudos de backend
+# Systems Lab
 
-A Next.js + TypeScript study hub with interactive Connections, HTTP, RabbitMQ and Concurrency laboratories. The homepage starts with `/labs/connections/` and also links to `/labs/http/`, `/labs/rabbitmq/` and `/labs/concurrency/`, with clearly marked planned modules for databases, caching, security and distributed systems.
+Um hub interativo para estudar backend: transformar um clique em uma requisição, escolher uma forma de comunicação, acompanhar mensagens e entender disputas por estado compartilhado.
 
-## Connections laboratory
+Construído com **Next.js, TypeScript, React e SVG isométrico animado**. Os laboratórios permitem alterar parâmetros, avançar uma ação por vez e inspecionar os dados dentro de cada componente.
 
-The connection comparison now includes a decision guide with five operation-based selectors. Each topic documents its mechanism, use case, benefits, limitations, appropriate/inappropriate operations, observations in the simulator and production considerations, with official references. Guide selection and simulator mode stay synchronized. The guide also explains a combined HTTP → webhook → SSE/polling checkout flow. `npm run docs:connections` generates the downloadable `public/guia-conexoes.md` from the same guide data; rerun it after editing `lib/connection-guide.ts`.
+**[Abrir a demonstração](https://rabbitmq-message-machine.impressoragk.chatgpt.site/)** · **[Experimentar concorrência](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/concurrency/)**
 
-An eight-step walkthrough follows a form click through React event binding, a browser-side object, JSON serialization, fetch, HTTP transport, Next.js route selection, server-side JSON parsing, response creation and UI rendering. Each step highlights the corresponding frontend/backend example code and displays the representation of the same configurable product and quantity. Manual steps and a pausable replay use the existing audited HTTP machine art; no new physical geometry is introduced.
+![Máquina isométrica de concorrência com celular, PC, API, banco, workers e processamento](docs/images/concurrency-machine.png)
 
-A separate deterministic communication model compares HTTP request/response, polling, SSE, WebSocket and webhook with browser/backend/provider actors, directional packets, logs, request/frame counts, network latency, polling interval and connect/disconnect controls. SSE and WebSocket start with a handshake. Old session frames cannot reopen or update a disconnected channel. Polling repeats ordinary HTTP queries; SSE sends backend events over one HTTP stream; WebSocket supports both directions after the illustrated HTTP/1.1 Upgrade. Webhook POSTs originate at an external provider, mutate backend state and return an HTTP acknowledgement to that provider. The front remains unchanged until it consults its own API. The comparison is entirely local; code snippets illustrate real API syntax but are not executed as live servers or external integrations. TLS, CORS/preflight and domain resolution are explained separately.
+## O que você pode estudar
 
-Eight connection model tests supplement the existing twenty tests. Sources: [Fetch](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch), [SSE](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events), [WebSocket](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API), [Webhooks](https://docs.github.com/en/webhooks/about-webhooks), [Next.js route handlers](https://nextjs.org/docs/app/getting-started/route-handlers).
+| Laboratório | Conceitos e experimentos |
+| --- | --- |
+| [Conexões](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/connections/) | Do evento no frontend ao JSON, HTTP, rota no backend e resposta. Compare HTTP, polling, SSE, WebSocket e webhook, com exemplos de quando usar cada um. |
+| [HTTP](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/http/) | GET, POST, PUT e DELETE; corpo, headers, status, autenticação didática, latência, timeout e falhas. |
+| [RabbitMQ](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/rabbitmq/) | Producer → Exchange → Queue → Consumer; roteamento por tipo, ACK, NACK, retry, dead letter queue, prefetch e múltiplos consumidores. |
+| [Concorrência](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/concurrency/) | API → pendência no banco → background → processamento → resultado. Compare reserva atômica, saldo compartilhado e idempotência. |
 
-## Shared-balance concurrency laboratory
+## Dois pedidos, uma conta com R$ 100
 
-The default `/labs/concurrency/` experiment submits two independent requests simultaneously: a blue PC/web request and a purple mobile request, both targeting account:1 with an initial R$100 balance. The pending-jobs database table acts as a work queue. A single worker completes the first R$100 debit before taking the second, which finishes as RECUSADO / SEM_SALDO. Each client gets 202 for receipt and later queries its own identifier for the business result. The account panel, ordered job chips, both database drawings, processing ledger and component inspectors read the same model.
+PC e celular enviam ao mesmo tempo dois pedidos diferentes, cada um solicitando R$ 100 da mesma conta. O PC usa azul; o celular, roxo. Cada tela acompanha seu próprio identificador e sua própria resposta.
 
-Four presets compare sequential processing, two workers using a stale balance check, an atomic check-and-debit, and two R$50 requests that both fit. Controls change the initial balance, amount per client, tie order, request origin, worker count/delay, account protection and idempotency. Each balance job is always reserved atomically: the unsafe scenario demonstrates two **different** jobs overspending the same account, rather than duplicate delivery. Its explicit read-then-debit schedule reaches −R$100. Atomic account updates recheck the current balance and reject the second request. Reprocessing the same approved identity with idempotency preserves the original debit. The original four same-job reservation/retry experiments remain available in the second scenario tab.
+1. A API recebe as solicitações e grava os pedidos como `PENDENTE`.
+2. Cada cliente recebe `202 Accepted`: o pedido foi recebido, ainda não aprovado.
+3. Com um worker, o primeiro pedido é processado: débito de R$ 100, saldo de R$ 0.
+4. O worker busca o segundo pedido e confere o saldo restante: `RECUSADO / SEM_SALDO`, sem débito.
+5. Cada tela consulta a API para receber o resultado do próprio pedido.
 
-Twenty-three concurrency tests cover ingress, sequencing, persistence boundaries, account balance, stale reads, parallel atomic debit, per-client identity, tie ordering, amount sufficiency, retry and time subdivision. The physical machine has 145 supported solids and eight inspectable stations. Database pieces 04 and 08 depict the same stored records; new calls advance rightward and responses return on their route. This remains a local teaching model without a real account database or payment provider.
+![Resultado: PC aprovado, celular sem saldo e saldo final de zero](docs/images/shared-balance.png)
 
-## HTTP laboratory
+Você pode inverter a ordem do empate, mudar o saldo e o valor solicitado, ativar dois workers e comparar as proteções:
 
-An isometric workstation sends a request over a pair of transport tracks to a processing rack. Controls choose GET, POST, PUT or DELETE, an endpoint, a JSON body, demo authentication, one-way latency, server processing time, client timeout and offline/server failures. Request and response inspectors show headers, JSON, status and Location/Allow/WWW-Authenticate where appropriate. A timeline, request history, server-side order count and six guided experiments all derive from the same deterministic model. Challenge completion is saved locally in the browser; no accounts or external API are involved.
+- **Reserva atômica do pedido:** impede dois workers de pegarem a mesma pendência.
+- **Conferência e débito atômicos:** impedem dois pedidos diferentes de gastarem o mesmo saldo.
+- **Idempotência por pedido:** evita um novo débito ao repetir a mesma operação.
 
-Routes model an example API: GET/POST `/api/orders`, GET/PUT/DELETE `/api/orders/:id`, and public GET `/api/health`. Unsupported methods return 405. Invalid JSON returns 400; invalid fields return 422. A local client timeout is separate from HTTP response codes and does not cancel an already-sent operation: the server can create a resource and the client can ignore its late response. The connection is already established; DNS, TLS, caching and packet retransmission are outside this model. Pause and 100 ms step controls support inspection; reduced motion starts paused.
+O cenário inseguro mostra dois workers lendo R$ 100 antes de debitar e gastando R$ 200. O saldo chega a −R$ 100 mesmo com pedidos reservados corretamente. No cenário protegido, um pedido é aprovado e o outro recusado. Com dois pedidos de R$ 50, ambos cabem no saldo de R$ 100.
 
-The HTTP machine has 203 recorded supported solids, with audited painter order and line endpoints. Its static art renders on the server; animation uses SVG refs and stops when settled. Network simulation continues while its drawing is offscreen so the phone form and inspector stay usable.
+## Interações
 
-## RabbitMQ laboratory
+- Enviar PC e celular juntos e acompanhar a fila de trabalho no banco.
+- Clicar nas peças, números ou nomes para ver requisições, registros, memória dos workers e extrato do processamento.
+- Pausar, avançar até a próxima ação, reiniciar e reprocessar um pedido.
+- Ajustar valores, origem, quantidade de workers, atraso, velocidade e proteções.
+- Alternar os temas da figura e ampliar seus detalhes.
+- Usar os laboratórios no celular ou pelo teclado. Na bancada de concorrência: `Espaço` executa/pausa, `Enter` avança e `R` reinicia.
 
-A Next.js 16 + TypeScript interactive explainer, built as a dense isometric SVG sorting machine. It includes publish rate and burst controls, three competing serial consumers, per-consumer prefetch, processing speed, ACK, NACK, bounded application retries, invalid-message injection, a dead-letter drawer with manual redrive, channel-close redelivery, queue accumulation, live telemetry and an event trace.
+## Rodar localmente
 
-## Run locally
-
-Requires Node.js 20.9 or newer.
+Pré-requisitos: Node.js 22 ou superior e npm.
 
 ```sh
+git clone https://github.com/gabrielvilela12/systems-lab.git
+cd systems-lab
 npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:3000. SPACE pauses/resumes, R resets. Use the one-second step button to inspect transitions. Reduced motion starts paused and disables continuous movement.
+Abra [http://127.0.0.1:3000](http://127.0.0.1:3000).
+
+Para gerar e visualizar o build de produção:
 
 ```sh
-npm run typecheck
-npm test
-npm run geometry
 npm run build
 npm start
 ```
 
-The production preview serves the static export at http://127.0.0.1:3001. The exported `out/` directory can be hosted on any static host. No backend, credentials or running RabbitMQ server are required.
+A prévia fica em [http://127.0.0.1:3001](http://127.0.0.1:3001). O projeto gera uma exportação estática na pasta `out/`.
 
-## Architecture
+## Validação
 
-- `lib/model.ts`: deterministic simulation; conservation, prefetch, failure/retry policy and metrics.
-- `lib/view.ts`: camera, layout, prebuilt moving cartridge and projection helpers.
-- `lib/geometry.ts`: 227 supported physical solids, with four-tone SVG shading and fine mechanical detail; computed on the server.
-- `lib/geometry-order.json`: measured painter order, generated by the anatomy geometry audit.
-- `components/machine-art.tsx`: server-rendered, depth-sorted static assembly.
-- `components/message-machine.tsx`: accessible controls, one time-based loop, SVG ref updates, sampled telemetry and guided explanations.
-- `lib/model.test.ts`: twelve RabbitMQ invariant and behavior tests, including type routing and subscription changes.
-- `lib/http-model.ts` and `lib/http-model.test.ts`: HTTP request lifecycle and eight tests for API semantics, timeouts and conservation of side effects.
-- `lib/http-geometry.ts`, `lib/http-view.ts`, `components/http-art.tsx`: the new workstation/rack machine and projection.
-- `components/http-lab.tsx`: protocol controls, animation, inspectors and guided experiments.
-- `app/page.tsx`, `app/hub.css`, `components/hub-nav.tsx`: hub and shared navigation.
-- `/labs/concurrency/`: the shared-balance and same-job reservation experiments described above. Static machine art is passed into one client controller; frames update transforms and transient attributes through refs while model events update React readouts. All eight components are inspectable, with pause, keyboard controls, next-action stepping, reduced motion, dark/light themes and local zoom.
-- `lib/concurrency-model.ts` and twenty-three tests: deterministic API/background lifecycle, work reservation, account debit, idempotency and retries. The local model does not connect to a database or payment provider. Actual payment idempotency requires coordination with the external provider.
-- `lib/concurrency-geometry.ts`, `components/concurrency-art.tsx`: recorded geometry, server-rendered paths and moving reader parts. `npm run geometry:concurrency` checks 25 combinations of reader positions; runtime painter order follows the solved depth keys plus actual displacement.
-- `scripts/geometry-audit.mjs`: full recorded-shape audit using the bundled anatomy kit. Rerun after changing geometry, then restart the app if necessary.
+```sh
+npm run typecheck
+npm test
+```
 
-The simulator is an educational AMQP 0-9-1 model. It does not emulate replication, persistence, TCP, publisher confirms, every exchange type, or operational broker tuning. Three direct bindings route `orders.created`, `payments.received` and `notifications.send` to their respective `.work` queues, represented together by the accumulator. The producer can send a single type or a weighted mix; zero weight disables a type. Colors are configurable and preserved through retry/dead-letter states, which use a red outline. The routing workbench controls which logical queues each worker subscribes to. Workers sharing a queue compete; no eligible worker leaves that queue's messages waiting without blocking other queues. Existing deliveries finish after subscription changes. The demo uses a shared per-worker prefetch budget across subscriptions (application policy); RabbitMQ normally applies per-consumer prefetch to individual subscriptions. Successful ACK removes a message; requeue=true returns failed work. The two-retry limit is application policy, and a configured DLX is assumed for final rejection to `orders.dead`. Visual redelivery transit is not a built-in retry delay. Each worker is serial: increasing prefetch adds buffering, not parallel processing. Redrive preserves invalid payloads and message types. The counters remain exact while the drawing samples large backlogs. Automatic publishing pauses at 2,000 active messages to keep the demo responsive.
+A versão atual tem **51 testes** dos modelos, incluindo limites de prefetch, retries, falhas de HTTP, sessões de conexão, reserva concorrente, conservação do saldo, idempotência e consistência entre diferentes passos de tempo.
 
-RabbitMQ sources: [Exchanges and bindings](https://www.rabbitmq.com/docs/exchanges), [Acknowledgements](https://www.rabbitmq.com/docs/confirms), [Consumer prefetch](https://www.rabbitmq.com/docs/consumer-prefetch), [Dead-letter exchanges](https://www.rabbitmq.com/docs/dlx).
+As auditorias das figuras verificam suporte das peças, interseções e ordem de desenho:
 
-HTTP sources: [Overview](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview), [Methods](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods), [Status codes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status). Run `npm run geometry:http` after changing the HTTP machine geometry.
+```sh
+npm run geometry
+npm run geometry:http
+npm run geometry:concurrency
+```
 
-The anatomy geometry kit is used under its MIT license. RabbitMQ is a trademark of its respective owner; this is an independent educational demonstration.
+## Como o projeto foi organizado
+
+```text
+app/                 Páginas e estilos dos laboratórios
+components/          Interfaces, figuras e painéis de inspeção
+components/iso/      Kit de geometria e auditoria isométrica
+lib/                 Modelos determinísticos, testes e geometria
+scripts/             Auditorias, exportação de documentação e prévia
+public/              Guia de conexões para download
+docs/                Imagens e notas técnicas
+```
+
+Os modelos TypeScript são independentes do React. A animação, os registros e os contadores vêm do mesmo estado. A arte estática é renderizada no servidor; o controlador atualiza os movimentos sem renderizar toda a interface a cada frame.
+
+Veja [as notas técnicas](docs/technical-notes.md) para os detalhes de cada modelo e suas referências.
+
+## Escopo didático
+
+Os laboratórios são **simulações locais no navegador**. Não executam um broker RabbitMQ, banco de dados, API de pagamentos ou transações financeiras reais. A exportação pode ser aberta sem credenciais ou infraestrutura externa.
+
+Na concorrência, a tabela de pendências funciona como fila de trabalho. As peças 04 e 08 representam o **mesmo banco**, repetido no desenho para as chamadas seguirem à direita; as respostas retornam pelo caminho. A ordem em empates é determinística para facilitar o estudo.
+
+No RabbitMQ, os limites de retry e a política de redrive pertencem à aplicação simulada. Replicação, persistência, publisher confirms e todos os tipos de exchange não estão cobertos.
+
+## Próximos estudos
+
+O hub apresenta como módulos planejados: bancos e transações, cache, segurança e sistemas distribuídos. Esses módulos ainda não estão implementados.
+
+## Créditos
+
+O projeto foi desenvolvido com apoio do Codex e da skill Anatomy para as figuras isométricas. O kit em `components/iso/` usa a licença MIT, preservada em [components/iso/LICENSE](components/iso/LICENSE).
+
+RabbitMQ é uma marca de seu respectivo proprietário. Este é um projeto educacional independente.

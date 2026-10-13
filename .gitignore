@@ -3,3 +3,8 @@ node_modules/
 out/
 *.tsbuildinfo
 .openai/.runtime/
+.env
+.env.*
+!.env.example
+.vercel/
+*.log
