@@ -54,9 +54,12 @@
 .hub-nav nav {
   display: flex;
   gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
 }
 .hub-nav nav a {
   font-size: 12px;
+  flex-shrink: 0;
   color: var(--hub-muted);
   padding: 9px 13px;
   border-radius: 5px;

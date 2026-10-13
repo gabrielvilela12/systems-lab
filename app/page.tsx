@@ -20,12 +20,6 @@ export default function Page() {
       icon: Database,
       title: "Banco de dados",
       description: "Transações, índices e modelagem.",
-      number: "04",
-    },
-    {
-      icon: Layers3,
-      title: "Cache",
-      description: "Hit, miss, TTL e invalidação.",
       number: "05",
     },
     {
@@ -107,7 +101,7 @@ export default function Page() {
             <span className="hub-eyebrow">ESCOLHA UM EXPERIMENTO</span>
             <h2>Seu próximo conceito, na prática.</h2>
           </div>
-          <span className="hub-count">04 LABORATÓRIOS ATIVOS</span>
+          <span className="hub-count">05 LABORATÓRIOS ATIVOS</span>
         </div>
         <div className="hub-lab-grid">
           <Link
@@ -194,6 +188,28 @@ export default function Page() {
             </div>
             <div className="hub-card-bottom">
               <span>3 experimentos para comparar</span>
+              <span>
+                Abrir laboratório <ArrowRight size={15} />
+              </span>
+            </div>
+          </Link>
+          <Link href="/labs/cache" className="hub-lab-card cache-card">
+            <div className="hub-card-top">
+              <Layers3 size={24} />
+              <span>04 / DESEMPENHO</span>
+            </div>
+            <h3>Cache</h3>
+            <p>
+              Procure a cópia, consulte a fonte. Veja quando uma resposta rápida
+              fica desatualizada.
+            </p>
+            <div className="hub-tags">
+              <span>Hit / miss</span>
+              <span>TTL</span>
+              <span>Invalidação</span>
+            </div>
+            <div className="hub-card-bottom">
+              <span>7 experimentos para explorar</span>
               <span>
                 Abrir laboratório <ArrowRight size={15} />
               </span>

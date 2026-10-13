@@ -5,10 +5,11 @@ import "./hub.css";
 import "./connections.css";
 import "./connection-guide.css";
 import "./concurrency.css";
+import "./cache.css";
 export const metadata: Metadata = {
   title: "Systems Lab · Hub de estudos de backend",
   description:
-    "Laboratórios interativos para estudar HTTP, RabbitMQ e os fundamentos de sistemas backend.",
+    "Laboratórios interativos para estudar conexões, HTTP, RabbitMQ, concorrência e cache em sistemas backend.",
 };
 export default function RootLayout({
   children,

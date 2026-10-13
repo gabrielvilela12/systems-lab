@@ -3,7 +3,8 @@ import { Boxes, ArrowUpRight } from "lucide-react";
 export function HubNav({
   active = "home",
 }: {
-  active?: "home" | "http" | "rabbitmq" | "connections" | "concurrency";
+  active?:
+    "home" | "http" | "rabbitmq" | "connections" | "concurrency" | "cache";
 }) {
   return (
     <header className="hub-nav">
@@ -42,6 +43,12 @@ export function HubNav({
           aria-current={active === "concurrency" ? "page" : undefined}
         >
           Concorrência
+        </Link>
+        <Link
+          href="/labs/cache"
+          aria-current={active === "cache" ? "page" : undefined}
+        >
+          Cache
         </Link>
       </nav>
       <span className="hub-nav-note">

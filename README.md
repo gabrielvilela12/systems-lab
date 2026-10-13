@@ -16,6 +16,15 @@ Construído com **Next.js, TypeScript, React e SVG isométrico animado**. Os lab
 | [HTTP](https://systems-lab-gabriel.vercel.app/labs/http/) | GET, POST, PUT e DELETE; corpo, headers, status, autenticação didática, latência, timeout e falhas. |
 | [RabbitMQ](https://systems-lab-gabriel.vercel.app/labs/rabbitmq/) | Producer → Exchange → Queue → Consumer; roteamento por tipo, ACK, NACK, retry, dead letter queue, prefetch e múltiplos consumidores. |
 | [Concorrência](https://systems-lab-gabriel.vercel.app/labs/concurrency/) | API → pendência no banco → background → processamento → resultado. Compare reserva atômica, saldo compartilhado e idempotência. |
+| [Cache](https://systems-lab-gabriel.vercel.app/labs/cache/) | Cache-aside, hit/miss, TTL, invalidação, LRU, fallback, pedidos simultâneos e proteção contra preenchimento antigo. |
+
+## Cache: uma cópia rápida, com prazo
+
+A bancada de Cache tem sete experimentos. Compare a primeira leitura com uma leitura aquecida, altere o preço no banco e observe a cópia antiga, expire uma chave pelo relógio simulado, reduza a capacidade e desligue o cache. Com seis pedidos simultâneos, compare seis SELECTs com uma leitura compartilhada. No cenário de escrita durante a leitura, veja como uma resposta antiga pode repovoar o cache depois de um DEL e como a proteção de versão bloqueia esse preenchimento.
+
+Clique nas peças para ver as chaves, os TTLs, as versões no banco, as chamadas da API e as respostas separadas de PC e celular. O [guia de Cache](https://systems-lab-gabriel.vercel.app/labs/cache/#guia) explica quando usar cada estratégia, seus ganhos e suas limitações. Os tempos são didáticos; a coalescência representa uma única instância de API.
+
+![Bancada isométrica de cache com cliente, API, gavetas, banco e estação SET](docs/images/cache-machine.png)
 
 ## Dois pedidos, uma conta com R$ 100
 
@@ -79,7 +88,7 @@ npm run typecheck
 npm test
 ```
 
-A versão atual tem **51 testes** dos modelos, incluindo limites de prefetch, retries, falhas de HTTP, sessões de conexão, reserva concorrente, conservação do saldo, idempotência e consistência entre diferentes passos de tempo.
+A versão atual tem **65 testes** dos modelos, incluindo limites de prefetch, retries, falhas de HTTP, sessões de conexão, reserva concorrente, conservação do saldo, idempotência, TTL, invalidação, LRU, coalescência e consistência entre diferentes passos de tempo.
 
 As auditorias das figuras verificam suporte das peças, interseções e ordem de desenho:
 
@@ -87,6 +96,7 @@ As auditorias das figuras verificam suporte das peças, interseções e ordem de
 npm run geometry
 npm run geometry:http
 npm run geometry:concurrency
+npm run geometry:cache
 ```
 
 ## Como o projeto foi organizado
@@ -115,7 +125,7 @@ No RabbitMQ, os limites de retry e a política de redrive pertencem à aplicaç�
 
 ## Próximos estudos
 
-O hub apresenta como módulos planejados: bancos e transações, cache, segurança e sistemas distribuídos. Esses módulos ainda não estão implementados.
+O hub apresenta como módulos planejados: bancos e transações, segurança e sistemas distribuídos. Esses módulos ainda não estão implementados.
 
 ## Créditos
 
