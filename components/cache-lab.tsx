@@ -15,6 +15,7 @@ import {
   Send,
   Trash2,
   WifiOff,
+  X,
 } from "lucide-react";
 import { HubNav } from "./hub-nav";
 import {
@@ -25,6 +26,8 @@ import {
   requestCache,
   stepCache,
   writeCacheProduct,
+  setCacheTraffic,
+  CACHE_REQUEST_LIMIT,
   type CacheConfig,
   type CacheOrigin,
   type CachePhase,
@@ -63,6 +66,12 @@ const phases: Record<
     station: "database",
     index: 3,
   },
+  "db-wait": {
+    title: "Banco ocupado: esperando uma vaga",
+    text: "A API já precisa consultar o banco, mas todas as vagas estão ocupadas. O pedido aguarda antes de iniciar seu SELECT.",
+    station: "database",
+    index: 3,
+  },
   waiting: {
     title: "Aguardando uma leitura compartilhada",
     text: "Outro pedido já busca a mesma chave. Este aguarda sem abrir um segundo SELECT.",
@@ -89,6 +98,12 @@ const phases: Record<
   },
 };
 const presets = [
+  {
+    id: "overload",
+    title: "Sem Redis × com Redis",
+    text: "Preparação: 10 req/s, banco com 2 vagas e consultas de 2 s, Redis desligado. Inicie e veja a espera crescer. Ligue o Redis durante a mesma rodada: após aquecer a chave, novos hits poupam o banco. Os pedidos antigos ainda precisam terminar.",
+    number: "★",
+  },
   {
     id: "basics",
     title: "Hit × miss",
@@ -189,6 +204,7 @@ function Toggle({
     <label className="cache-toggle">
       <input
         type="checkbox"
+        aria-label={label}
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />
@@ -205,6 +221,16 @@ function prepareState(id: string) {
     requestCache(s, key);
     advanceCache(s, 2700);
   };
+  if (id === "overload") {
+    configureCache(s, {
+      enabled: false,
+      requestRate: 10,
+      dbConcurrency: 2,
+      dbLatency: 2000,
+      ttl: 30000,
+    });
+    setCacheTraffic(s, true);
+  }
   if (id === "stale") {
     configureCache(s, { ttl: 30000, invalidateOnWrite: false });
     warm("produto:1");
@@ -232,13 +258,21 @@ function prepareState(id: string) {
 export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
   const state = useRef<CacheState>(createCacheState());
   const [snap, setSnap] = useState<CacheState>(() => createCacheState());
-  const [paused, setPaused] = useState(false),
-    pausedRef = useRef(false);
+  const [paused, setPaused] = useState(true),
+    pausedRef = useRef(true);
   const [speed, setSpeed] = useState(0.75),
     speedRef = useRef(0.75);
   const [key, setKey] = useState<ProductKey>("produto:1");
   const [preset, setPreset] = useState("basics"),
     [inspect, setInspect] = useState("cache");
+  const [inspectOpen, setInspectOpen] = useState(false);
+  const inspector = useRef<HTMLElement>(null),
+    inspectorTrigger = useRef<HTMLElement | null>(null);
+  function openInspector(id: string, trigger: HTMLElement) {
+    inspectorTrigger.current = trigger;
+    setInspect(id);
+    setInspectOpen(true);
+  }
   const [selected, setSelected] = useState<number | null>(null),
     [light, setLight] = useState(false);
   const stage = useRef<HTMLDivElement>(null),
@@ -282,7 +316,9 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
     setKey(id === "lru" ? "produto:3" : "produto:1");
     setSelected(null);
     pause(
-      id === "race" || matchMedia("(prefers-reduced-motion: reduce)").matches,
+      id === "race" ||
+        id === "overload" ||
+        matchMedia("(prefers-reduced-motion: reduce)").matches,
     );
     sync();
   }
@@ -303,10 +339,14 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
     function draw(dt = 1 / 60) {
       const s = state.current;
       const active = s.requests.filter((r) => r.phase !== "done");
+      const shown = [
+        ...active.filter((r) => r.phase !== "db-wait").slice(0, 16),
+        ...active.filter((r) => r.phase === "db-wait").slice(0, 8),
+      ];
       const packets = packetGroup.current?.children;
       if (packets)
         Array.from(packets).forEach((node, i) => {
-          const r = active[i];
+          const r = shown[i];
           node.setAttribute("visibility", r ? "visible" : "hidden");
           if (r) {
             node.setAttribute(
@@ -361,13 +401,20 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
         node.dataset.active = String(
           node.dataset.station === (recent ? phases[recent.phase].station : ""),
         );
+      const busy = s.requests.filter((r) => r.phase === "db").length;
+      const waiting = s.requests.filter((r) => r.phase === "db-wait").length;
+      stage.current?.setAttribute("data-db-overloaded", String(waiting > 0));
+      stage.current?.setAttribute(
+        "data-redis-enabled",
+        String(s.config.enabled && s.config.online),
+      );
       const readout = stage.current?.querySelector("[data-readout]");
       if (readout)
-        readout.textContent = `${(s.now / 1000).toFixed(1)} s · ${s.entries.length}/${s.config.capacity} chaves · ${s.metrics.dbReads} SELECTs`;
+        readout.textContent = `${(s.now / 1000).toFixed(1)} s · banco ${busy}/${s.config.dbConcurrency} · ${waiting} esperando · ${s.entries.length} chaves`;
       return moving;
     }
     function wake() {
-      if (!frame && visible) {
+      if (!frame) {
         last = 0;
         frame = requestAnimationFrame(tick);
       }
@@ -378,17 +425,21 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
       last = now;
       const s = state.current,
         working =
-          s.requests.some((r) => r.phase !== "done") || s.entries.length > 0;
-      if (!pausedRef.current && visible && working)
+          s.requests.some((r) => r.phase !== "done") ||
+          s.entries.length > 0 ||
+          (s.traffic.active && s.config.requestRate > 0);
+      if (!pausedRef.current && working)
         advanceCache(s, dt * 1000 * speedRef.current);
       const workingAfter =
-        s.requests.some((r) => r.phase !== "done") || s.entries.length > 0;
-      const moving = draw(dt);
+        s.requests.some((r) => r.phase !== "done") ||
+        s.entries.length > 0 ||
+        (s.traffic.active && s.config.requestRate > 0);
+      const moving = visible ? draw(dt) : false;
       if (now - lastUi > 160 || !workingAfter) {
         setSnap(structuredClone(s));
         lastUi = now;
       }
-      if (visible && (moving || (!pausedRef.current && workingAfter)))
+      if ((visible && moving) || (!pausedRef.current && workingAfter))
         frame = requestAnimationFrame(tick);
     }
     drawRef.current = () => {
@@ -398,12 +449,9 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
     const observer = new IntersectionObserver(
       (entries) => {
         visible = entries[entries.length - 1].isIntersecting;
-        if (visible) wake();
-        else {
-          cancelAnimationFrame(frame);
-          frame = 0;
-          last = 0;
-        }
+        // The clock keeps processing traffic while controls or inspection are open;
+        // only the SVG animation is skipped when its figure is offscreen.
+        wake();
       },
       { rootMargin: "120px" },
     );
@@ -447,6 +495,37 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
       delete (window as typeof window & { __cache?: typeof debug }).__cache;
     };
   }, []);
+  useEffect(() => {
+    if (!inspectOpen) return;
+    const trigger = inspectorTrigger.current;
+    const beforeOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    inspector.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setInspectOpen(false);
+      if (event.key !== "Tab") return;
+      const items = Array.from(
+        inspector.current?.querySelectorAll<HTMLElement>(
+          "button, a[href], input, select, summary, [tabindex='0']",
+        ) ?? [],
+      );
+      const first = items[0],
+        last = items.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = beforeOverflow;
+      document.removeEventListener("keydown", onKey);
+      trigger?.focus({ preventScroll: true });
+    };
+  }, [inspectOpen]);
   const active = snap.requests.filter((r) => r.phase !== "done");
   const focused =
     snap.requests.find((r) => r.id === selected) ??
@@ -456,14 +535,12 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
   const product = snap.db.find((p) => p.key === key)!;
   const cacheEntry = snap.entries.find((e) => e.key === key);
   const totals = snap.metrics.hits + snap.metrics.misses;
-  const completed = snap.requests.filter((r) => r.phase === "done");
-  const average = completed.length
-    ? Math.round(
-        completed.reduce((n, r) => n + r.endedAt! - r.startedAt, 0) /
-          completed.length,
-      )
+  const average = snap.metrics.completed
+    ? Math.round(snap.metrics.responseMs / snap.metrics.completed)
     : null;
-  const remainingCapacity = active.length < 12;
+  const remainingCapacity = active.length < CACHE_REQUEST_LIMIT;
+  const dbBusy = active.filter((r) => r.phase === "db");
+  const dbWaiting = active.filter((r) => r.phase === "db-wait");
   return (
     <main className="hub-shell cache-lab">
       <HubNav active="cache" />
@@ -520,6 +597,42 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
                 </button>
               </div>
               <div
+                className="cache-load-meter"
+                data-overloaded={dbWaiting.length > 0}
+              >
+                <div>
+                  <span>ENTRADA CONFIGURADA</span>
+                  <b>
+                    {snap.traffic.active ? snap.config.requestRate : 0}{" "}
+                    <small>req/s</small>
+                  </b>
+                </div>
+                <div>
+                  <span>BANCO OCUPADO</span>
+                  <b>
+                    {dbBusy.length}
+                    <small> / {snap.config.dbConcurrency} vagas</small>
+                  </b>
+                </div>
+                <div>
+                  <span>ESPERANDO BANCO</span>
+                  <b>
+                    {dbWaiting.length}
+                    <small> pedidos</small>
+                  </b>
+                </div>
+                <p>
+                  {dbWaiting.length
+                    ? "Banco sobrecarregado: novas consultas aguardam uma vaga."
+                    : "Banco com capacidade para atender."}{" "}
+                  {snap.config.enabled
+                    ? snap.config.online
+                      ? "Redis ligado."
+                      : "Redis indisponível: usando o banco."
+                    : "Redis desligado: todas as leituras vão ao banco."}
+                </p>
+              </div>
+              <div
                 className="cache-svg-wrap"
                 tabIndex={0}
                 role="group"
@@ -542,7 +655,7 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
                   );
                   const id = target?.getAttribute("data-station");
                   if (id && cacheStations.some((s) => s.id === id))
-                    setInspect(id);
+                    openInspector(id, e.currentTarget);
                 }}
               >
                 <svg
@@ -552,8 +665,8 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
                   aria-label="Bancada isométrica: cliente, API, gavetas de cache, banco em discos e estação SET. O trabalho segue à direita; respostas retornam pelo trilho inferior."
                 >
                   {art}
-                  <g ref={packetGroup}>
-                    {Array.from({ length: 12 }, (_, i) => (
+                  <g ref={packetGroup} pointerEvents="none">
+                    {Array.from({ length: 24 }, (_, i) => (
                       <g
                         key={i}
                         className="cache-packet"
@@ -574,7 +687,9 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
                 <button
                   key={s.id}
                   aria-pressed={inspect === s.id}
-                  onClick={() => setInspect(s.id)}
+                  aria-haspopup="dialog"
+                  aria-controls="cache-inspect-dialog"
+                  onClick={(e) => openInspector(s.id, e.currentTarget)}
                 >
                   <b>{s.title}</b>
                   <span>{s.hint}</span>
@@ -587,6 +702,9 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
               inferior leva apenas as respostas ao cliente.{" "}
               <span className="cache-key-web" /> PC{" "}
               <span className="cache-key-mobile" /> Celular
+              {active.length > 24
+                ? ` · Desenho amostral: ${active.length} pedidos nos contadores.`
+                : ""}
             </p>
           </div>
           <div className="cache-now" aria-live="polite">
@@ -619,14 +737,26 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
               </div>
             ) : null}
           </div>
+        </div>
+        <aside className="cache-controls" aria-label="Controles de cache">
+          <div className="cache-panel-heading">
+            <Play size={16} />
+            <h2>Simulação</h2>
+          </div>
           <div className="cache-playbar">
             <button onClick={() => pause(!paused)}>
               {paused ? <Play size={15} /> : <Pause size={15} />}{" "}
-              {paused ? "Continuar" : "Pausar"}
+              {paused
+                ? snap.now > 0
+                  ? "Continuar"
+                  : "Iniciar simulação"
+                : "Pausar"}
             </button>
             <button
               onClick={step}
-              disabled={!active.length && !snap.entries.length}
+              disabled={
+                !active.length && !snap.entries.length && !snap.traffic.active
+              }
             >
               <SkipForward size={15} /> Próxima etapa
             </button>
@@ -656,18 +786,96 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
             </label>
             <span>{paused ? "RELÓGIO PAUSADO" : "TEMPO SIMULADO"}</span>
           </div>
-        </div>
-        <aside className="cache-controls" aria-label="Controles de cache">
           <div className="cache-panel-heading">
             <Send size={16} />
-            <h2>Faça uma leitura</h2>
+            <h2>Carga e banco</h2>
           </div>
+          <section
+            className="cache-load-settings"
+            aria-label="Carga e qualidade do banco"
+          >
+            <label className="cache-number">
+              Requisições por segundo
+              <input
+                type="number"
+                aria-label="Requisições por segundo"
+                min={0}
+                max={50}
+                step={1}
+                value={snap.config.requestRate}
+                onChange={(e) =>
+                  change({ requestRate: Number(e.target.value) })
+                }
+              />
+            </label>
+            <Toggle
+              label="Tráfego automático"
+              checked={snap.traffic.active}
+              onChange={(v) => {
+                setCacheTraffic(state.current, v, key);
+                sync();
+              }}
+              hint="Alterna PC e celular. Gere pedidos para o produto selecionado; Iniciar faz o relógio andar."
+            />
+            <Toggle
+              label="Usar Redis"
+              checked={snap.config.enabled}
+              onChange={(v) => change({ enabled: v })}
+              hint="Ligue durante a sobrecarga. Não reinicia a rodada nem apaga os pedidos."
+            />
+            <label className="cache-number">
+              Capacidade do banco
+              <input
+                type="number"
+                aria-label="Consultas simultâneas do banco"
+                min={1}
+                max={12}
+                step={1}
+                value={snap.config.dbConcurrency}
+                onChange={(e) =>
+                  change({ dbConcurrency: Number(e.target.value) })
+                }
+              />
+              <small>
+                Máximo de SELECTs simultâneos. Consultas já iniciadas terminam;
+                o novo limite vale para as próximas.
+              </small>
+            </label>
+            <Range
+              label="Tempo do banco"
+              value={snap.config.dbLatency}
+              min={500}
+              max={4000}
+              step={100}
+              unit="ms"
+              onChange={(v) => change({ dbLatency: v })}
+              hint="Consultas lentas seguram as vagas por mais tempo. Vale para os próximos SELECTs."
+            />
+            <p className="cache-capacity-hint">
+              Capacidade aproximada:{" "}
+              <b>
+                {(
+                  (snap.config.dbConcurrency * 1000) /
+                  snap.config.dbLatency
+                ).toFixed(1)}{" "}
+                leituras/s
+              </b>
+              . Hits não ocupam uma vaga no banco.
+            </p>
+          </section>
           <label className="cache-select">
             Produto
             <select
               aria-label="Produto"
               value={key}
-              onChange={(e) => setKey(e.target.value as ProductKey)}
+              onChange={(e) => {
+                const next = e.target.value as ProductKey;
+                setKey(next);
+                if (state.current.traffic.active) {
+                  setCacheTraffic(state.current, true, next);
+                  sync();
+                }
+              }}
             >
               {snap.db.map((p) => (
                 <option key={p.key} value={p.key}>
@@ -711,97 +919,93 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
             Enviar 6 juntos <ArrowRight size={15} />
           </button>
           <small className="cache-control-note">
-            Mesmo produto, clientes alternados. Limite: 12 pedidos em andamento.
+            Mesmo produto, clientes alternados. Limite didático:{" "}
+            {CACHE_REQUEST_LIMIT} pedidos em andamento; excedentes são contados
+            como não admitidos.
             {paused ? " Relógio pausado: avance ou continue." : ""}
           </small>
-          <div className="cache-controls-divider" />
-          <Range
-            label="TTL"
-            value={snap.config.ttl / 1000}
-            min={1}
-            max={30}
-            unit="s"
-            onChange={(v) => change({ ttl: v * 1000 })}
-            hint="Vale para os próximos SETs. Hits não renovam o prazo."
-          />
-          <Range
-            label="Capacidade"
-            value={snap.config.capacity}
-            min={1}
-            max={3}
-            unit="chaves"
-            onChange={(v) => change({ capacity: v })}
-            hint="Ao lotar, sai a chave menos recentemente usada (LRU)."
-          />
-          <Range
-            label="Tempo do banco"
-            value={snap.config.dbLatency}
-            min={500}
-            max={4000}
-            step={100}
-            unit="ms"
-            onChange={(v) => change({ dbLatency: v })}
-            hint="Latência didática; aplicada aos próximos SELECTs."
-          />
-          <Toggle
-            label="Compartilhar leitura"
-            checked={snap.config.coalesce}
-            onChange={(v) => change({ coalesce: v })}
-            hint="Pedidos iguais aguardam o mesmo SELECT nesta API."
-          />
-          <Toggle
-            label="Cache disponível"
-            checked={snap.config.online}
-            onChange={(v) => change({ online: v })}
-            hint="Desative para ver o fallback para o banco."
-          />
-          <details
-            className="cache-write"
-            open={preset === "stale" || preset === "race"}
-          >
-            <summary>Escrita e invalidação</summary>
-            <p>
-              Atualize este produto pela API e veja o que acontece com a cópia.
-            </p>
-            <button
-              className="cache-update"
-              onClick={() => {
-                writeCacheProduct(state.current, key, product.price + 20);
-                sync();
-              }}
+          <details className="cache-tuning">
+            <summary>TTL, espaço e falhas</summary>
+            <div className="cache-controls-divider" />
+            <Range
+              label="TTL"
+              value={snap.config.ttl / 1000}
+              min={1}
+              max={30}
+              unit="s"
+              onChange={(v) => change({ ttl: v * 1000 })}
+              hint="Vale para os próximos SETs. Hits não renovam o prazo."
+            />
+            <Range
+              label="Capacidade"
+              value={snap.config.capacity}
+              min={1}
+              max={3}
+              unit="chaves"
+              onChange={(v) => change({ capacity: v })}
+              hint="Ao lotar, sai a chave menos recentemente usada (LRU)."
+            />
+            <Toggle
+              label="Compartilhar leitura"
+              checked={snap.config.coalesce}
+              onChange={(v) => change({ coalesce: v })}
+              hint="Pedidos iguais aguardam o mesmo SELECT nesta API."
+            />
+            <Toggle
+              label="Redis disponível"
+              checked={snap.config.online}
+              onChange={(v) => change({ online: v })}
+              hint="Desative para ver o fallback para o banco."
+            />
+            <details
+              className="cache-write"
+              open={preset === "stale" || preset === "race"}
             >
-              Alterar preço no banco: +R$ 20
-            </button>
-            <Toggle
-              label="Invalidar ao escrever"
-              checked={snap.config.invalidateOnWrite}
-              onChange={(v) => change({ invalidateOnWrite: v })}
-              hint="UPDATE no banco, depois DEL da chave."
-            />
-            <Toggle
-              label="Proteção de versão"
-              checked={snap.config.versionGuard}
-              onChange={(v) => change({ versionGuard: v })}
-              hint="Impede que uma leitura antiga repovoe o cache após DEL ou UPDATE."
-            />
-            <div className="cache-clear-buttons">
+              <summary>Escrita e invalidação</summary>
+              <p>
+                Atualize este produto pela API e veja o que acontece com a
+                cópia.
+              </p>
               <button
+                className="cache-update"
                 onClick={() => {
-                  invalidateCache(state.current, key);
+                  writeCacheProduct(state.current, key, product.price + 20);
                   sync();
                 }}
               >
-                <Trash2 size={13} /> Invalidar chave
+                Alterar preço no banco: +R$ 20
               </button>
-              <button
-                onClick={() => {
-                  invalidateCache(state.current);
-                  sync();
-                }}
-              >
-                Limpar cache
-              </button>
-            </div>
+              <Toggle
+                label="Invalidar ao escrever"
+                checked={snap.config.invalidateOnWrite}
+                onChange={(v) => change({ invalidateOnWrite: v })}
+                hint="UPDATE no banco, depois DEL da chave."
+              />
+              <Toggle
+                label="Proteção de versão"
+                checked={snap.config.versionGuard}
+                onChange={(v) => change({ versionGuard: v })}
+                hint="Impede que uma leitura antiga repovoe o cache após DEL ou UPDATE."
+              />
+              <div className="cache-clear-buttons">
+                <button
+                  onClick={() => {
+                    invalidateCache(state.current, key);
+                    sync();
+                  }}
+                >
+                  <Trash2 size={13} /> Invalidar chave
+                </button>
+                <button
+                  onClick={() => {
+                    invalidateCache(state.current);
+                    sync();
+                  }}
+                >
+                  Limpar cache
+                </button>
+              </div>
+            </details>
           </details>
         </aside>
       </div>
@@ -813,7 +1017,7 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
           </b>
           <p>
             {totals
-              ? `${Math.round((snap.metrics.hits / totals) * 100)}% de hit`
+              ? `${Math.round((snap.metrics.hits / totals) * 100)}% de hit no Redis`
               : "Nenhuma consulta ao cache"}
           </p>
         </div>
@@ -828,7 +1032,7 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
             {average ?? "—"}
             <small>{average !== null ? " ms" : ""}</small>
           </b>
-          <p>Dos {completed.length} pedidos visíveis concluídos</p>
+          <p>Dos {snap.metrics.completed} pedidos concluídos na rodada</p>
         </div>
         <div>
           <span>REMOÇÕES</span>
@@ -839,139 +1043,208 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
           </p>
         </div>
       </div>
-      <section
-        className="cache-inspector"
-        aria-labelledby="cache-inspect-title"
-      >
-        <div className="cache-panel-heading">
-          <Layers3 size={17} />
-          <h2 id="cache-inspect-title">
-            Dentro de{" "}
-            {cacheStations.find((s) => s.id === inspect)?.title.split(" · ")[1]}
-          </h2>
-          <span>ESTADO REAL DA SIMULAÇÃO</span>
-        </div>
-        {inspect === "cache" || inspect === "fill" ? (
-          <>
-            <p>
-              {inspect === "cache"
-                ? "GET consulta estas gavetas. A barra mostra quanto tempo resta antes da expiração."
-                : "A API faz SET nestas mesmas chaves depois do SELECT. Cada SET aceito inicia um novo TTL."}{" "}
-              {!snap.config.online ? (
-                <b className="cache-offline">
-                  <WifiOff size={14} /> Cache indisponível: GET, SET e DEL não
-                  chegam.
-                </b>
-              ) : null}
-            </p>
-            <div className="cache-drawers">
-              {[0, 1, 2].map((slot) => {
-                const e = snap.entries.find((v) => v.slot === slot);
-                const original = snap.db.find((p) => p.key === e?.key);
-                return (
-                  <div
-                    key={slot}
-                    className={e ? "cache-drawer occupied" : "cache-drawer"}
-                  >
-                    <span>GAVETA 0{slot + 1}</span>
-                    <h3>{e?.key ?? "Vazia"}</h3>
-                    {e ? (
-                      <>
-                        <b>
-                          {money(e.price)} <small>v{e.version}</small>
-                        </b>
-                        <p>
-                          {e.name} ·{" "}
-                          {e.version !== original?.version
-                            ? "cópia diferente do banco"
-                            : "mesma versão do banco"}
-                        </p>
-                        <div className="cache-ttl-bar">
-                          <i
-                            style={{
-                              width: `${Math.max(0, Math.min(100, ((e.expiresAt - snap.now) / (e.expiresAt - e.storedAt)) * 100))}%`,
-                            }}
-                          />
-                        </div>
-                        <small>
-                          Expira em{" "}
-                          {Math.max(0, (e.expiresAt - snap.now) / 1000).toFixed(
-                            1,
-                          )}{" "}
-                          s · uso LRU #{e.used}
-                        </small>
-                      </>
-                    ) : (
-                      <p>Nenhuma cópia armazenada.</p>
-                    )}
-                  </div>
-                );
-              })}
+      <div className="cache-load-outcome" aria-label="Resultado da carga">
+        <span>
+          Recebidos <b>{snap.metrics.received}</b>
+        </span>
+        <span>
+          Concluídos <b>{snap.metrics.completed}</b>
+        </span>
+        <span>
+          Em andamento <b>{active.length}</b>
+        </span>
+        <span>
+          Limite didático / não admitidos <b>{snap.metrics.rejected}</b>
+        </span>
+      </div>
+      {inspectOpen && (
+        <div
+          className="cache-inspect-backdrop"
+          onClick={() => setInspectOpen(false)}
+        >
+          <section
+            className="cache-inspector"
+            id="cache-inspect-dialog"
+            role="dialog"
+            aria-modal="true"
+            ref={inspector}
+            onClick={(e) => e.stopPropagation()}
+            aria-labelledby="cache-inspect-title"
+          >
+            <div className="cache-panel-heading">
+              <button
+                className="cache-inspect-close"
+                aria-label="Fechar conteúdo da peça"
+                onClick={() => setInspectOpen(false)}
+              >
+                <X size={18} />
+              </button>
+              <Layers3 size={17} />
+              <h2 id="cache-inspect-title">
+                Dentro de{" "}
+                {
+                  cacheStations
+                    .find((s) => s.id === inspect)
+                    ?.title.split(" · ")[1]
+                }
+              </h2>
+              <span>ESTADO REAL DA SIMULAÇÃO</span>
             </div>
-          </>
-        ) : null}
-        {inspect === "database" ? (
-          <>
-            <p>
-              Fonte autoritativa. TTL e eviction não removem registros do banco.
-            </p>
-            <div className="cache-db-grid">
-              {snap.db.map((p) => (
-                <div key={p.key}>
-                  <span>{p.key}</span>
-                  <b>{p.name}</b>
-                  <strong>{money(p.price)}</strong>
-                  <small>versão {p.version}</small>
+            {inspect === "cache" || inspect === "fill" ? (
+              <>
+                <p>
+                  {inspect === "cache"
+                    ? "GET consulta estas gavetas. A barra mostra quanto tempo resta antes da expiração."
+                    : "A API faz SET nestas mesmas chaves depois do SELECT. Cada SET aceito inicia um novo TTL."}{" "}
+                  {!snap.config.enabled ? (
+                    <b className="cache-offline">
+                      Redis desativado na API. As cópias existentes continuam
+                      até expirar, mas não servem novas leituras.
+                    </b>
+                  ) : !snap.config.online ? (
+                    <b className="cache-offline">
+                      <WifiOff size={14} /> Cache indisponível: GET, SET e DEL
+                      não chegam.
+                    </b>
+                  ) : null}
+                </p>
+                <div className="cache-drawers">
+                  {[0, 1, 2].map((slot) => {
+                    const e = snap.entries.find((v) => v.slot === slot);
+                    const original = snap.db.find((p) => p.key === e?.key);
+                    return (
+                      <div
+                        key={slot}
+                        className={e ? "cache-drawer occupied" : "cache-drawer"}
+                      >
+                        <span>GAVETA 0{slot + 1}</span>
+                        <h3>{e?.key ?? "Vazia"}</h3>
+                        {e ? (
+                          <>
+                            <b>
+                              {money(e.price)} <small>v{e.version}</small>
+                            </b>
+                            <p>
+                              {e.name} ·{" "}
+                              {e.version !== original?.version
+                                ? "cópia diferente do banco"
+                                : "mesma versão do banco"}
+                            </p>
+                            <div className="cache-ttl-bar">
+                              <i
+                                style={{
+                                  width: `${Math.max(0, Math.min(100, ((e.expiresAt - snap.now) / (e.expiresAt - e.storedAt)) * 100))}%`,
+                                }}
+                              />
+                            </div>
+                            <small>
+                              Expira em{" "}
+                              {Math.max(
+                                0,
+                                (e.expiresAt - snap.now) / 1000,
+                              ).toFixed(1)}{" "}
+                              s · uso LRU #{e.used}
+                            </small>
+                          </>
+                        ) : (
+                          <p>Nenhuma cópia armazenada.</p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          </>
-        ) : null}
-        {inspect === "api" ? (
-          <>
-            <p>
-              A API faz as chamadas; o cliente não consulta o cache ou o banco
-              diretamente.
-            </p>
-            <pre>{`GET /produtos/:id\n  → cache.GET("produto:{id}")\n  → HIT: responder a cópia\n  → MISS: banco.SELECT(id)\n          cache.SET(chave, produto, TTL)\n          responder o produto\n\nUPDATE produto\n  → banco.UPDATE(id, preço)\n  → ${snap.config.invalidateOnWrite ? "cache.DEL(chave)" : "sem invalidação (modo experimental)"}`}</pre>
-            <p>
-              {active.length} pedido(s) em andamento · {snap.metrics.bypasses}{" "}
-              leitura(s) com cache indisponível.
-            </p>
-          </>
-        ) : null}
-        {inspect === "client" ? (
-          <>
-            <p>
-              PC e celular recebem respostas separadas. Clique em um pedido
-              abaixo para acompanhar seus dados.
-            </p>
-            <div className="cache-client-responses">
-              {(["web", "mobile"] as const).map((origin) => {
-                const r = [...snap.requests]
-                  .reverse()
-                  .find((r) => r.origin === origin && r.phase === "done");
-                return (
-                  <div key={origin} data-origin={origin}>
-                    {origin === "web" ? (
-                      <Monitor size={18} />
-                    ) : (
-                      <Smartphone size={18} />
-                    )}
-                    <span>{origin === "web" ? "PC" : "Celular"}</span>
-                    <b>{r ? money(r.value!.price) : "Sem resposta"}</b>
-                    <small>
-                      {r
-                        ? `#${r.id} · v${r.value!.version} · ${r.endedAt! - r.startedAt} ms`
-                        : "Envie um pedido"}
-                    </small>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        ) : null}
-      </section>
+              </>
+            ) : null}
+            {inspect === "database" ? (
+              <>
+                <p>
+                  Fonte autoritativa. TTL e eviction não removem registros do
+                  banco. {dbBusy.length}/{snap.config.dbConcurrency} vagas
+                  ocupadas; {dbWaiting.length} pedidos aguardando.
+                </p>
+                <div className="cache-db-grid">
+                  {snap.db.map((p) => (
+                    <div key={p.key}>
+                      <span>{p.key}</span>
+                      <b>{p.name}</b>
+                      <strong>{money(p.price)}</strong>
+                      <small>versão {p.version}</small>
+                    </div>
+                  ))}
+                </div>
+                <h3>Consultas e pedidos em espera</h3>
+                <div className="cache-inspect-requests">
+                  {[...dbBusy, ...dbWaiting].slice(0, 12).map((r) => (
+                    <div key={r.id}>
+                      <b>
+                        #{r.id} · {r.key}
+                      </b>
+                      <span>
+                        {r.phase === "db"
+                          ? `SELECT em execução · snapshot v${r.value?.version}`
+                          : `Aguardando vaga há ${Math.round(snap.now - r.dbQueuedAt!)} ms`}
+                      </span>
+                    </div>
+                  ))}
+                  {!dbBusy.length && !dbWaiting.length && (
+                    <p>Nenhuma leitura em andamento ou esperando vaga.</p>
+                  )}
+                  {dbBusy.length + dbWaiting.length > 12 && (
+                    <p>
+                      Exibindo 12 dos {dbBusy.length + dbWaiting.length} pedidos
+                      que precisam do banco.
+                    </p>
+                  )}
+                </div>
+              </>
+            ) : null}
+            {inspect === "api" ? (
+              <>
+                <p>
+                  A API faz as chamadas; o cliente não consulta o cache ou o
+                  banco diretamente.
+                </p>
+                <pre>{`GET /produtos/:id\n  → cache.GET("produto:{id}")\n  → HIT: responder a cópia\n  → MISS: banco.SELECT(id)\n          cache.SET(chave, produto, TTL)\n          responder o produto\n\nUPDATE produto\n  → banco.UPDATE(id, preço)\n  → ${snap.config.invalidateOnWrite ? "cache.DEL(chave)" : "sem invalidação (modo experimental)"}`}</pre>
+                <p>
+                  {active.length} pedido(s) em andamento ·{" "}
+                  {snap.metrics.bypasses} leitura(s) sem usar Redis.
+                </p>
+              </>
+            ) : null}
+            {inspect === "client" ? (
+              <>
+                <p>
+                  PC e celular recebem respostas separadas. Clique em um pedido
+                  abaixo para acompanhar seus dados.
+                </p>
+                <div className="cache-client-responses">
+                  {(["web", "mobile"] as const).map((origin) => {
+                    const r = [...snap.requests]
+                      .reverse()
+                      .find((r) => r.origin === origin && r.phase === "done");
+                    return (
+                      <div key={origin} data-origin={origin}>
+                        {origin === "web" ? (
+                          <Monitor size={18} />
+                        ) : (
+                          <Smartphone size={18} />
+                        )}
+                        <span>{origin === "web" ? "PC" : "Celular"}</span>
+                        <b>{r ? money(r.value!.price) : "Sem resposta"}</b>
+                        <small>
+                          {r
+                            ? `#${r.id} · v${r.value!.version} · ${Math.round(r.endedAt! - r.startedAt)} ms`
+                            : "Envie um pedido"}
+                        </small>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : null}
+          </section>
+        </div>
+      )}
       <div className="cache-bottom-grid">
         <section className="cache-requests">
           <div className="cache-panel-heading">
@@ -1029,7 +1302,7 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
                       </td>
                       <td>
                         {r.endedAt !== null
-                          ? `${r.endedAt - r.startedAt} ms`
+                          ? `${Math.round(r.endedAt - r.startedAt)} ms`
                           : "em curso"}
                       </td>
                     </tr>

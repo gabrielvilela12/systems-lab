@@ -9,6 +9,8 @@ import {
   requestCache,
   stepCache,
   writeCacheProduct,
+  setCacheTraffic,
+  CACHE_REQUEST_LIMIT,
 } from "./cache-model";
 import type { CacheState, ProductKey } from "./cache-model";
 function read(s: CacheState, key: ProductKey = "produto:1") {
@@ -154,8 +156,156 @@ test("capacity reductions enforce LRU and active request bounds", () => {
   configureCache(s, { capacity: 1 });
   assert.equal(s.entries.length, 1);
   assert.equal(s.entries[0].key, "produto:3");
-  assert.equal(requestCache(s, "produto:1", "web", 100), 12);
+  assert.equal(
+    requestCache(s, "produto:1", "web", CACHE_REQUEST_LIMIT + 20),
+    CACHE_REQUEST_LIMIT,
+  );
   assert.equal(requestCache(s, "produto:1"), 0);
+  assert.equal(s.metrics.rejected, 21);
+});
+test("finite DB slots queue reads in FIFO order and waiting is part of response latency", () => {
+  const s = createCacheState({
+    enabled: false,
+    dbConcurrency: 1,
+    dbLatency: 1000,
+  });
+  requestCache(s, "produto:1", "web", 3);
+  advanceCache(s, 350);
+  assert.deepEqual(
+    s.requests.map((r) => r.phase),
+    ["db", "db-wait", "db-wait"],
+  );
+  assert.equal(s.metrics.dbReads, 1);
+  advanceCache(s, 1000);
+  assert.equal(s.requests[1].dbStartedAt, 1350);
+  advanceCache(s, 2350);
+  assert.deepEqual(
+    s.requests.map((r) => r.endedAt! - r.startedAt),
+    [1700, 2700, 3700],
+  );
+  assert.equal(s.entries.length, 0);
+  assert.equal(s.metrics.completed, 3);
+});
+test("a queued read takes the DB snapshot when its SELECT starts", () => {
+  const s = createCacheState({
+    enabled: false,
+    dbConcurrency: 1,
+    dbLatency: 1000,
+  });
+  requestCache(s, "produto:1", "web", 2);
+  advanceCache(s, 350);
+  writeCacheProduct(s, "produto:1", 120);
+  advanceCache(s, 2350);
+  assert.equal(s.requests[0].value!.price, 100);
+  assert.equal(s.requests[1].value!.price, 120);
+});
+test("increasing DB capacity admits waiting reads; reducing it does not cancel active reads", () => {
+  const s = createCacheState({ dbConcurrency: 1 });
+  requestCache(s, "produto:1", "web", 6);
+  advanceCache(s, 600);
+  configureCache(s, { dbConcurrency: 3 });
+  assert.equal(s.requests.filter((r) => r.phase === "db").length, 3);
+  configureCache(s, { dbConcurrency: 1 });
+  assert.equal(s.requests.filter((r) => r.phase === "db").length, 3);
+  advanceCache(s, 10000);
+  assert.ok(s.requests.every((r) => r.phase === "done"));
+});
+test("coalescing shares even a queued read, and disabling Redis releases its followers", () => {
+  const s = createCacheState({ dbConcurrency: 1, coalesce: true });
+  requestCache(s, "produto:2");
+  requestCache(s, "produto:1", "web", 6);
+  advanceCache(s, 600);
+  assert.equal(s.requests.filter((r) => r.phase === "db-wait").length, 1);
+  assert.equal(s.metrics.shared, 5);
+  configureCache(s, { enabled: false });
+  advanceCache(s, 8000);
+  assert.ok(s.requests.every((r) => r.phase === "done"));
+  assert.equal(s.metrics.dbReads, 2);
+  assert.equal(s.entries.length, 0);
+});
+test("automatic traffic has the same arrivals and ordering regardless of frame size", () => {
+  const a = createCacheState({
+    requestRate: 10,
+    dbConcurrency: 2,
+    enabled: false,
+  });
+  const b = createCacheState({
+    requestRate: 10,
+    dbConcurrency: 2,
+    enabled: false,
+  });
+  setCacheTraffic(a, true);
+  setCacheTraffic(b, true);
+  advanceCache(a, 10000);
+  for (let i = 0; i < 100; i++) advanceCache(b, 100);
+  assert.deepEqual(a, b);
+  assert.equal(a.metrics.received, 100);
+  assert.equal(a.requests[0].origin, "web");
+  assert.equal(a.requests[1].origin, "mobile");
+});
+test("enabling Redis under load preserves old work and reduces subsequent DB demand", () => {
+  const cached = createCacheState({
+    enabled: false,
+    requestRate: 10,
+    dbConcurrency: 1,
+    dbLatency: 1000,
+    ttl: 30000,
+  });
+  setCacheTraffic(cached, true);
+  advanceCache(cached, 10000);
+  const oldWaiting = cached.requests.filter(
+    (r) => r.phase === "db-wait",
+  ).length;
+  const uncached = structuredClone(cached);
+  const oldId = cached.requests.find((r) => r.phase === "db-wait")!.id;
+  configureCache(cached, { enabled: true });
+  assert.ok(
+    cached.requests.some((r) => r.id === oldId && r.phase === "db-wait"),
+  );
+  advanceCache(cached, 15000);
+  advanceCache(uncached, 15000);
+  assert.ok(cached.metrics.hits > 100);
+  assert.ok(
+    cached.requests.filter((r) => r.phase === "db-wait").length < oldWaiting,
+  );
+  assert.ok(
+    uncached.requests.filter((r) => r.phase === "db-wait").length > oldWaiting,
+  );
+  assert.ok(cached.metrics.completed > uncached.metrics.completed);
+});
+test("stopping traffic drains accepted work; zero rate generates nothing", () => {
+  const s = createCacheState({ requestRate: 5 });
+  setCacheTraffic(s, true);
+  advanceCache(s, 1000);
+  assert.equal(s.metrics.received, 5);
+  configureCache(s, { requestRate: 0 });
+  advanceCache(s, 5000);
+  assert.equal(s.metrics.received, 5);
+  configureCache(s, { requestRate: 5 });
+  advanceCache(s, 1000);
+  assert.equal(s.metrics.received, 10);
+  setCacheTraffic(s, false);
+  advanceCache(s, 10000);
+  assert.equal(s.metrics.received, 10);
+  assert.equal(s.metrics.completed, 10);
+});
+test("sustained overload is bounded and conserves accepted, pending and rejected requests", () => {
+  const s = createCacheState({
+    enabled: false,
+    requestRate: 50,
+    dbConcurrency: 1,
+    dbLatency: 4000,
+  });
+  setCacheTraffic(s, true);
+  advanceCache(s, 30000);
+  const pending = s.requests.filter((r) => r.phase !== "done").length;
+  assert.ok(pending <= CACHE_REQUEST_LIMIT);
+  assert.ok(s.metrics.rejected > 0);
+  assert.equal(
+    s.metrics.received,
+    s.metrics.completed + pending + s.metrics.rejected,
+  );
+  assert.ok(s.requests.length <= CACHE_REQUEST_LIMIT + 40);
 });
 test("stepping can finish a paused read and reach an exact expiration", () => {
   const s = createCacheState();

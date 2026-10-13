@@ -19,6 +19,36 @@ export function CacheGuide() {
       </div>
       <div className="cache-guide-grid">
         <article>
+          <span className="cache-guide-number">EXPERIMENTO / SOBRECARGA</span>
+          <h3>Por que o banco fica esperando?</h3>
+          <p>
+            Cada consulta ocupa uma vaga por um tempo. Com 2 vagas e 2 segundos
+            por SELECT, esta simulação atende aproximadamente 1 leitura por
+            segundo no banco. Se entram 10 por segundo sem cache, a espera
+            cresce.
+          </p>
+          <p>
+            Ligue o Redis durante a rodada. Quando a chave estiver aquecida, os
+            próximos hits evitam SELECTs. As leituras já enviadas ao banco
+            continuam: ativar o cache não cancela o trabalho antigo. TTL curto
+            ou muitos produtos diferentes podem causar novos misses.
+          </p>
+          <p>
+            O tráfego usa o produto selecionado, alternando PC e celular. A taxa
+            usa segundos do relógio simulado. Capacidade e latência representam
+            um banco simplificado; as velocidades do Redis e da rede são
+            didáticas. O limite de 200 pedidos em andamento protege o navegador
+            e conta os excedentes, sem fingir um erro real do servidor.
+          </p>
+          <a
+            href="https://redis.io/docs/latest/develop/use-cases/cache-aside/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Referência: Redis · Cache-aside ↗
+          </a>
+        </article>
+        <article>
           <span className="cache-guide-number">01 / O FLUXO</span>
           <h3>Quem consulta quem?</h3>
           <p>

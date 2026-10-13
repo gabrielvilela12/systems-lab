@@ -1,7 +1,14 @@
 export type ProductKey = "produto:1" | "produto:2" | "produto:3" | "produto:4";
 export type CacheOrigin = "web" | "mobile";
 export type CachePhase =
-  "outbound" | "lookup" | "db" | "waiting" | "fill" | "return" | "done";
+  | "outbound"
+  | "lookup"
+  | "db-wait"
+  | "db"
+  | "waiting"
+  | "fill"
+  | "return"
+  | "done";
 export type Product = {
   key: ProductKey;
   name: string;
@@ -18,6 +25,9 @@ export type CacheConfig = {
   ttl: number;
   capacity: number;
   dbLatency: number;
+  dbConcurrency: number;
+  requestRate: number;
+  enabled: boolean;
   online: boolean;
   coalesce: boolean;
   invalidateOnWrite: boolean;
@@ -39,6 +49,8 @@ export type CacheRequest = {
   endedAt: number | null;
   stale: boolean;
   saved: boolean;
+  dbQueuedAt: number | null;
+  dbStartedAt: number | null;
 };
 export type CacheState = {
   now: number;
@@ -48,6 +60,12 @@ export type CacheState = {
   db: Product[];
   entries: CacheEntry[];
   requests: CacheRequest[];
+  traffic: {
+    active: boolean;
+    key: ProductKey;
+    nextAt: number;
+    sequence: number;
+  };
   generations: Record<ProductKey, number>;
   metrics: {
     hits: number;
@@ -58,6 +76,10 @@ export type CacheState = {
     expirations: number;
     shared: number;
     stale: number;
+    received: number;
+    rejected: number;
+    completed: number;
+    responseMs: number;
   };
   events: { at: number; text: string; kind: "info" | "hit" | "warn" }[];
 };
@@ -65,6 +87,9 @@ export const cacheDefaults: CacheConfig = {
   ttl: 10000,
   capacity: 3,
   dbLatency: 1500,
+  dbConcurrency: 6,
+  requestRate: 10,
+  enabled: true,
   online: true,
   coalesce: false,
   invalidateOnWrite: true,
@@ -73,6 +98,7 @@ export const cacheDefaults: CacheConfig = {
 export const CACHE_NETWORK = 350,
   CACHE_LOOKUP = 250,
   CACHE_FILL = 250;
+export const CACHE_REQUEST_LIMIT = 200;
 export function createCacheState(
   config: Partial<CacheConfig> = {},
 ): CacheState {
@@ -89,6 +115,7 @@ export function createCacheState(
     ],
     entries: [],
     requests: [],
+    traffic: { active: false, key: "produto:1", nextAt: Infinity, sequence: 0 },
     generations: {
       "produto:1": 0,
       "produto:2": 0,
@@ -104,6 +131,10 @@ export function createCacheState(
       expirations: 0,
       shared: 0,
       stale: 0,
+      received: 0,
+      rejected: 0,
+      completed: 0,
+      responseMs: 0,
     },
     events: [],
   };
@@ -140,8 +171,20 @@ export function requestCache(
   origin: CacheOrigin = "web",
   count = 1,
 ) {
-  const room = 12 - s.requests.filter((r) => r.phase !== "done").length;
+  if (!Number.isFinite(count) || count <= 0) return 0;
+  const wanted = Math.floor(count);
+  s.metrics.received += wanted;
+  const room =
+    CACHE_REQUEST_LIMIT - s.requests.filter((r) => r.phase !== "done").length;
   const n = Math.max(0, Math.min(room, Math.floor(count)));
+  if (n < wanted) {
+    s.metrics.rejected += wanted - n;
+    log(
+      s,
+      `${wanted - n} pedido(s) não admitido(s): limite didático de ${CACHE_REQUEST_LIMIT} em andamento.`,
+      "warn",
+    );
+  }
   for (let i = 0; i < n; i++) {
     const id = s.nextId++;
     s.requests.push({
@@ -160,6 +203,8 @@ export function requestCache(
       endedAt: null,
       stale: false,
       saved: false,
+      dbQueuedAt: null,
+      dbStartedAt: null,
     });
     log(
       s,
@@ -171,13 +216,35 @@ export function requestCache(
   );
   return n;
 }
+function startDb(s: CacheState, r: CacheRequest) {
+  r.dbStartedAt = s.now;
+  r.source = "database";
+  r.value = { ...s.db.find((p) => p.key === r.key)! };
+  r.generation = s.generations[r.key];
+  s.metrics.dbReads++;
+  schedule(s, r, "db", s.config.dbLatency);
+  log(
+    s,
+    `#${r.id}: a API abre SELECT no banco (${r.key}, v${r.value.version}).`,
+  );
+}
+function drainDb(s: CacheState) {
+  let room =
+    s.config.dbConcurrency - s.requests.filter((r) => r.phase === "db").length;
+  for (const r of s.requests
+    .filter((r) => r.phase === "db-wait")
+    .sort((a, b) => a.id - b.id)) {
+    if (room-- <= 0) break;
+    startDb(s, r);
+  }
+}
 function beginDb(s: CacheState, r: CacheRequest) {
-  if (s.config.online && s.config.coalesce) {
+  if (s.config.enabled && s.config.online && s.config.coalesce) {
     const leader = s.requests.find(
       (p) =>
         p.id !== r.id &&
         p.key === r.key &&
-        (p.phase === "db" || p.phase === "fill"),
+        (p.phase === "db" || p.phase === "db-wait" || p.phase === "fill"),
     );
     if (leader) {
       r.leader = leader.id;
@@ -193,17 +260,20 @@ function beginDb(s: CacheState, r: CacheRequest) {
       return;
     }
   }
-  r.source = "database";
-  r.value = { ...s.db.find((p) => p.key === r.key)! };
-  r.generation = s.generations[r.key];
-  s.metrics.dbReads++;
-  schedule(s, r, "db", s.config.dbLatency);
-  log(
-    s,
-    `#${r.id}: a API abre SELECT no banco (${r.key}, v${r.value.version}).`,
-  );
+  r.dbQueuedAt = s.now;
+  r.phase = "db-wait";
+  r.stageAt = s.now;
+  r.due = Infinity;
+  drainDb(s);
+  if (r.phase === "db-wait")
+    log(
+      s,
+      `#${r.id}: banco ocupado; aguarda uma vaga de consulta na API.`,
+      "warn",
+    );
 }
 function save(s: CacheState, r: CacheRequest) {
+  if (!s.config.enabled) return;
   if (!s.config.online) {
     log(
       s,
@@ -258,13 +328,19 @@ function save(s: CacheState, r: CacheRequest) {
 function transition(s: CacheState, r: CacheRequest) {
   switch (r.phase) {
     case "outbound":
-      schedule(s, r, "lookup", CACHE_LOOKUP);
-      log(s, `#${r.id}: a API recebe o GET e consulta a chave ${r.key}.`);
+      if (s.config.enabled) {
+        schedule(s, r, "lookup", CACHE_LOOKUP);
+        log(s, `#${r.id}: a API recebe o GET e consulta a chave ${r.key}.`);
+      } else {
+        s.metrics.bypasses++;
+        log(s, `#${r.id}: Redis desativado na API; leitura direta do banco.`);
+        beginDb(s, r);
+      }
       break;
     case "lookup": {
       expireCache(s);
       const entry = s.entries.find((e) => e.key === r.key);
-      if (s.config.online && entry) {
+      if (s.config.enabled && s.config.online && entry) {
         r.source = "cache";
         r.slot = entry.slot;
         const {
@@ -284,46 +360,46 @@ function transition(s: CacheState, r: CacheRequest) {
           "hit",
         );
       } else {
-        if (s.config.online) {
+        if (s.config.enabled && s.config.online) {
           s.metrics.misses++;
           log(s, `#${r.id}: MISS; chave ausente ou expirada.`, "warn");
         } else {
           s.metrics.bypasses++;
-          log(s, `#${r.id}: cache indisponível; a API usa o banco.`, "warn");
+          log(
+            s,
+            `#${r.id}: Redis ${s.config.enabled ? "indisponível" : "desativado"}; a API usa o banco.`,
+            "warn",
+          );
         }
         beginDb(s, r);
       }
       break;
     }
     case "db":
-      schedule(s, r, "fill", CACHE_FILL);
+      schedule(
+        s,
+        r,
+        s.config.enabled ? "fill" : "return",
+        s.config.enabled ? CACHE_FILL : CACHE_NETWORK,
+      );
       log(
         s,
-        `#${r.id}: SELECT retornou v${r.value!.version}; a API prepara o SET.`,
+        `#${r.id}: SELECT retornou v${r.value!.version}; ${s.config.enabled ? "a API prepara o SET" : "responde ao cliente sem cache"}.`,
       );
+      if (!s.config.enabled) releaseFollowers(s, r);
       break;
     case "fill": {
       save(s, r);
       schedule(s, r, "return", CACHE_NETWORK);
-      for (const follower of s.requests.filter(
-        (p) => p.phase === "waiting" && p.leader === r.id,
-      )) {
-        follower.value = { ...r.value! };
-        follower.source = "shared";
-        follower.slot = r.slot;
-        schedule(s, follower, "return", CACHE_NETWORK);
-        log(
-          s,
-          `#${follower.id}: reutiliza a leitura #${r.id}; a API responde também a este cliente.`,
-          "hit",
-        );
-      }
+      releaseFollowers(s, r);
       break;
     }
     case "return":
       r.phase = "done";
       r.endedAt = s.now;
       r.due = Infinity;
+      s.metrics.completed++;
+      s.metrics.responseMs += s.now - r.startedAt;
       r.stale = r.value!.version !== s.db.find((p) => p.key === r.key)!.version;
       if (r.stale) s.metrics.stale++;
       log(
@@ -334,10 +410,26 @@ function transition(s: CacheState, r: CacheRequest) {
       break;
   }
 }
+function releaseFollowers(s: CacheState, r: CacheRequest) {
+  for (const follower of s.requests.filter(
+    (p) => p.phase === "waiting" && p.leader === r.id,
+  )) {
+    follower.value = { ...r.value! };
+    follower.source = "shared";
+    follower.slot = r.slot;
+    schedule(s, follower, "return", CACHE_NETWORK);
+    log(
+      s,
+      `#${follower.id}: reutiliza a leitura #${r.id}; a API responde também a este cliente.`,
+      "hit",
+    );
+  }
+}
 export function nextCacheTime(s: CacheState) {
   return Math.min(
     ...s.requests.filter((r) => r.phase !== "done").map((r) => r.due),
     ...s.entries.map((e) => e.expiresAt),
+    s.traffic.active ? s.traffic.nextAt : Infinity,
   );
 }
 export function advanceCache(s: CacheState, dt: number) {
@@ -353,6 +445,15 @@ export function advanceCache(s: CacheState, dt: number) {
       .filter((r) => r.due <= s.now && r.phase !== "done")
       .sort((a, b) => a.id - b.id))
       transition(s, r);
+    drainDb(s);
+    if (s.traffic.active && s.traffic.nextAt <= s.now) {
+      requestCache(
+        s,
+        s.traffic.key,
+        s.traffic.sequence++ % 2 ? "mobile" : "web",
+      );
+      s.traffic.nextAt = s.now + 1000 / s.config.requestRate;
+    }
   }
   s.now = target;
   expireCache(s);
@@ -406,6 +507,16 @@ export function configureCache(s: CacheState, patch: Partial<CacheConfig>) {
   s.config.ttl = Math.max(1000, Math.min(30000, s.config.ttl));
   s.config.capacity = Math.max(1, Math.min(3, Math.round(s.config.capacity)));
   s.config.dbLatency = Math.max(500, Math.min(4000, s.config.dbLatency));
+  s.config.dbConcurrency = Math.max(
+    1,
+    Math.min(12, Math.round(s.config.dbConcurrency)),
+  );
+  s.config.requestRate = Math.max(0, Math.min(50, s.config.requestRate));
+  if (patch.requestRate !== undefined && s.traffic.active)
+    s.traffic.nextAt = s.config.requestRate
+      ? s.now + 1000 / s.config.requestRate
+      : Infinity;
+  drainDb(s);
   expireCache(s);
   while (s.entries.length > s.config.capacity) {
     const victim = [...s.entries].sort((a, b) => a.used - b.used)[0];
@@ -413,4 +524,22 @@ export function configureCache(s: CacheState, patch: Partial<CacheConfig>) {
     s.metrics.evictions++;
     log(s, `${victim.key}: LRU por redução da capacidade.`, "warn");
   }
+}
+export function setCacheTraffic(
+  s: CacheState,
+  active: boolean,
+  key = s.traffic.key,
+) {
+  s.traffic.active = active;
+  s.traffic.key = key;
+  s.traffic.nextAt =
+    active && s.config.requestRate
+      ? s.now + 1000 / s.config.requestRate
+      : Infinity;
+  log(
+    s,
+    active
+      ? `Tráfego ligado: ${s.config.requestRate} req/s para ${key}, alternando PC e celular.`
+      : "Novos pedidos automáticos interrompidos; os já recebidos continuam.",
+  );
 }

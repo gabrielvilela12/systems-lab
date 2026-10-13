@@ -14,14 +14,19 @@ export const DRAWER_TRAVEL = 9;
 export const cacheStations = [
   { id: "client", title: "01 · Cliente", hint: "PC / celular", x: -248 },
   { id: "api", title: "02 · API", hint: "Orquestra as chamadas", x: -142 },
-  { id: "cache", title: "03 · Cache / GET", hint: "Procura a cópia", x: -36 },
+  { id: "cache", title: "03 · Redis / GET", hint: "Veja chaves e TTL", x: -36 },
   {
     id: "database",
     title: "04 · Banco / SELECT",
-    hint: "API lê a fonte",
+    hint: "Veja produtos e consultas",
     x: 82,
   },
-  { id: "fill", title: "05 · Cache / SET", hint: "API guarda a cópia", x: 220 },
+  {
+    id: "fill",
+    title: "05 · Redis / SET",
+    hint: "Mesmas chaves do Redis",
+    x: 220,
+  },
 ];
 export const cachePacket = k.solidSvg(
   k.slabOf({ x: -5, y: -4, w: 10, d: 8, r: 1 }, 0, 5, KP, 4, 0.4),
@@ -42,6 +47,10 @@ export function cachePacketTransform(
   if (r.phase === "outbound") x += 106 * eased;
   if (r.phase === "lookup") x = -142 + 106 * eased;
   if (r.phase === "db") x = -36 + 118 * eased;
+  if (r.phase === "db-wait") {
+    x = 54 + (r.id % 4) * 6;
+    y = 34 - Math.floor((r.id % 8) / 4) * 8;
+  }
   if (r.phase === "fill") x = 82 + 138 * eased;
   if (r.phase === "waiting") {
     x = -27 + (r.id % 4) * 8;
