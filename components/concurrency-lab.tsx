@@ -722,27 +722,6 @@ export function ConcurrencyLab({
                         ? "Dois workers: cada débito confere e altera o saldo como uma unidade."
                         : "Dois workers: leitura do saldo separada do débito. A cópia pode ficar antiga."}
                   </p>
-                  <div>
-                    <button
-                      className="hub-primary"
-                      onClick={execute}
-                      disabled={snap.running}
-                    >
-                      <Play size={14} />
-                      {snap.running
-                        ? "Solicitações em andamento"
-                        : config.origin === "both"
-                          ? "Enviar PC + celular juntos"
-                          : "Enviar solicitação"}
-                    </button>
-                    <button
-                      onClick={step}
-                      disabled={snap.started && !snap.running}
-                    >
-                      <SkipForward size={14} />
-                      Próxima ação
-                    </button>
-                  </div>
                 </div>
               </header>
               <div className="con-client-requests">
@@ -938,10 +917,11 @@ export function ConcurrencyLab({
                 ))}
               </div>
             </div>
-            <section
+            <details
               className="con-worker-stream"
               aria-label="Percurso completo do worker"
             >
+              <summary>Acompanhar o worker passo a passo</summary>
               <header>
                 <strong>ACOMPANHE O WORKER</strong>
                 <div role="group" aria-label="Worker acompanhado">
@@ -1038,7 +1018,7 @@ export function ConcurrencyLab({
                   </span>
                 )}
               </div>
-            </section>
+            </details>
             <div className="con-plate-bottom">
               <span>SIMULAÇÃO LOCAL · ETAPA {currentStep + 1}/8</span>
               <b ref={clock} data-readout>
@@ -1050,6 +1030,7 @@ export function ConcurrencyLab({
             {stationAnchors.map((s) => (
               <button
                 key={s.id}
+                title={s.hint}
                 aria-pressed={inspect === s.id}
                 data-open-station={s.id}
                 aria-controls="con-component-inspector"
@@ -1059,7 +1040,6 @@ export function ConcurrencyLab({
                 }}
               >
                 <strong>{s.title}</strong>
-                <small>{s.hint}</small>
               </button>
             ))}
           </div>
@@ -1068,17 +1048,6 @@ export function ConcurrencyLab({
               ? `${selectedStation.title}: conteúdo aberto. Avance uma ação no painel para ver os dados mudarem.`
               : "04 e 08 são o mesmo banco, repetido para seguir o fluxo. Web azul · celular roxo. Clique nas peças para ver seu conteúdo."}
           </p>
-          <div className="con-steps" aria-label="Percurso do pedido">
-            {concurrencySteps.map((s, i) => (
-              <div
-                key={s.title}
-                aria-current={currentStep === i ? "step" : undefined}
-              >
-                <span>0{i + 1}</span>
-                {s.title}
-              </div>
-            ))}
-          </div>
           <section
             className="con-current"
             aria-live="polite"
@@ -1140,66 +1109,6 @@ export function ConcurrencyLab({
               </small>
             </div>
           </section>
-          <div className="con-legend">
-            <span>
-              <i />
-              Leitor em atividade
-            </span>
-            <span>
-              <i className="reserved" />
-              Pedido reservado
-            </span>
-            <span>
-              <i className="done" />
-              Concluído
-            </span>
-            <span>Contador = cobranças aplicadas</span>
-          </div>
-          <div className="con-actions">
-            <button
-              className="hub-primary"
-              onClick={() => {
-                if (!paused && snap.running) {
-                  takeControl();
-                  pause(true);
-                } else execute();
-              }}
-            >
-              {!paused && snap.running ? (
-                <Pause size={15} />
-              ) : (
-                <Play size={15} />
-              )}{" "}
-              {!paused && snap.running
-                ? "Pausar"
-                : snap.started && snap.running
-                  ? "Continuar"
-                  : balanceMode && config.origin === "both"
-                    ? "Enviar PC + celular juntos"
-                    : "Executar"}
-            </button>
-            <button onClick={step} disabled={snap.started && !snap.running}>
-              <SkipForward size={15} />
-              Próxima ação
-            </button>
-            <button onClick={() => reset()} aria-label="Reiniciar experimento">
-              <RotateCcw size={15} />
-            </button>
-            <button
-              onClick={retry}
-              disabled={
-                snap.running ||
-                !snap.started ||
-                snap.jobs[0]?.status !== "CONCLUÍDO"
-              }
-            >
-              <Repeat2 size={14} />
-              Reprocessar #42
-            </button>
-          </div>
-          <p className="con-notice" aria-live="polite">
-            {notice}
-          </p>
           <div className="con-stats">
             <div>
               <span>TENTATIVAS DE COBRANÇA</span>
@@ -1285,167 +1194,229 @@ export function ConcurrencyLab({
             <ScanLine size={16} />
             <h2>Controle da disputa</h2>
           </div>
-          <p>Mudar um controle reinicia o experimento.</p>
-          {balanceMode ? (
-            <>
-              <label>
-                Saldo inicial da conta
-                <select
-                  value={config.initialBalance}
-                  onChange={(e) =>
-                    change("initialBalance", Number(e.target.value))
-                  }
-                >
-                  {[0, 50, 100, 150, 200].map((n) => (
-                    <option key={n} value={n}>
-                      {money(n)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Valor solicitado por tela
-                <select
-                  value={config.requestAmount}
-                  onChange={(e) =>
-                    change("requestAmount", Number(e.target.value))
-                  }
-                >
-                  {[25, 50, 75, 100, 150].map((n) => (
-                    <option key={n} value={n}>
-                      {money(n)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Proteção do saldo
-                <select
-                  value={config.balanceGuard}
-                  onChange={(e) =>
-                    change(
-                      "balanceGuard",
-                      e.target.value as ConcurrencyConfig["balanceGuard"],
-                    )
-                  }
-                >
-                  <option value="atomic">
-                    Conferir + debitar juntos (atômico)
-                  </option>
-                  <option value="unsafe">
-                    Conferir antes, debitar depois (inseguro)
-                  </option>
-                </select>
-              </label>
-              <label>
-                Quem entra primeiro no empate?
-                <select
-                  value={config.firstOrigin}
-                  disabled={config.origin !== "both"}
-                  onChange={(e) =>
-                    change(
-                      "firstOrigin",
-                      e.target.value as ConcurrencyConfig["firstOrigin"],
-                    )
-                  }
-                >
-                  <option value="front">PC primeiro</option>
-                  <option value="app">Celular primeiro</option>
-                </select>
-              </label>
-              <p className="con-control-note">
-                Neste cenário, cada pedido sempre é reservado atomicamente. O
-                controle acima protege o saldo da conta, uma operação diferente.
-              </p>
-            </>
-          ) : (
-            <div className="con-mode" role="group" aria-label="Tipo de reserva">
-              <button
-                aria-pressed={config.mode === "unsafe"}
-                onClick={() => change("mode", "unsafe")}
-              >
-                <ScanLine size={14} />
-                Sem proteção
-              </button>
-              <button
-                aria-pressed={config.mode === "atomic"}
-                onClick={() => change("mode", "atomic")}
-              >
-                <LockKeyhole size={14} />
-                Atômica
-              </button>
-            </div>
-          )}
-          <label>
-            Workers ativos
-            <select
-              value={config.workers}
-              onChange={(e) => change("workers", Number(e.target.value))}
+          <div className="con-actions">
+            <button
+              className="hub-primary"
+              onClick={() => {
+                if (!paused && snap.running) {
+                  takeControl();
+                  pause(true);
+                } else execute();
+              }}
             >
-              <option value={1}>1 worker</option>
-              <option value={2}>2 workers</option>
-            </select>
-          </label>
-          <label>
-            Origem da solicitação
-            <select
-              value={config.origin}
-              onChange={(e) =>
-                change("origin", e.target.value as ConcurrencyConfig["origin"])
+              {!paused && snap.running ? (
+                <Pause size={15} />
+              ) : (
+                <Play size={15} />
+              )}{" "}
+              {!paused && snap.running
+                ? "Pausar"
+                : snap.started && snap.running
+                  ? "Continuar"
+                  : "Iniciar simulação"}
+            </button>
+            <button onClick={step} disabled={snap.started && !snap.running}>
+              <SkipForward size={15} />
+              Próxima ação
+            </button>
+            <button onClick={() => reset()} aria-label="Reiniciar experimento">
+              <RotateCcw size={15} />
+            </button>
+            <button
+              onClick={retry}
+              disabled={
+                snap.running ||
+                !snap.started ||
+                snap.jobs[0]?.status !== "CONCLUÍDO"
               }
             >
-              <option value="front">Frontend web</option>
-              <option value="app">App móvel</option>
-              {balanceMode && (
-                <option value="both">PC + celular simultâneos</option>
-              )}
-            </select>
-          </label>
-          {!balanceMode && (
-            <label>
-              Pedidos enviados à API
-              <select
-                value={config.jobs}
-                onChange={(e) => change("jobs", Number(e.target.value))}
-              >
-                {[1, 2, 3, 4].map((n) => (
-                  <option key={n} value={n}>
-                    {n} pedido{n > 1 ? "s" : ""} de R$ 100
-                  </option>
-                ))}
-              </select>
-            </label>
+              <Repeat2 size={14} />
+              Reprocessar #42
+            </button>
+          </div>
+          <p className="con-notice" aria-live="polite">
+            {notice}
+          </p>
+
+          {balanceMode && config.origin === "both" && (
+            <p className="con-start-hint">
+              Iniciar envia o pedido do PC e do celular ao mesmo tempo.
+            </p>
           )}
-          <label className="con-delay">
-            Atraso do worker B <b>{config.delayB} ms</b>
-            <input
-              type="range"
-              aria-label="Atraso do worker B"
-              min={0}
-              max={2000}
-              step={100}
-              disabled={config.workers === 1}
-              value={config.delayB}
-              onChange={(e) => change("delayB", Number(e.target.value))}
-            />
-            <small>
-              {balanceMode
-                ? "No modo inseguro, os dois podem ler o mesmo saldo se o atraso for menor que 800 ms."
-                : "Menos de 1.200 ms permite a leitura antiga no modo inseguro."}
-            </small>
-          </label>
-          <label className="con-toggle">
-            <input
-              type="checkbox"
-              checked={config.idempotent}
-              onChange={(e) => change("idempotent", e.target.checked)}
-            />
-            <span>
-              <ShieldCheck size={15} />
-              Efeito idempotente
-              <small>Chave única por pedido, mesmo ao reprocessar.</small>
-            </span>
-          </label>
+          <details className="con-settings">
+            <summary>Configuração do cenário</summary>
+            <div className="con-settings-fields">
+              <p>Mudar um controle reinicia o experimento.</p>
+              {balanceMode ? (
+                <>
+                  <label>
+                    Saldo inicial da conta
+                    <select
+                      value={config.initialBalance}
+                      onChange={(e) =>
+                        change("initialBalance", Number(e.target.value))
+                      }
+                    >
+                      {[0, 50, 100, 150, 200].map((n) => (
+                        <option key={n} value={n}>
+                          {money(n)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Valor solicitado por tela
+                    <select
+                      value={config.requestAmount}
+                      onChange={(e) =>
+                        change("requestAmount", Number(e.target.value))
+                      }
+                    >
+                      {[25, 50, 75, 100, 150].map((n) => (
+                        <option key={n} value={n}>
+                          {money(n)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Proteção do saldo
+                    <select
+                      value={config.balanceGuard}
+                      onChange={(e) =>
+                        change(
+                          "balanceGuard",
+                          e.target.value as ConcurrencyConfig["balanceGuard"],
+                        )
+                      }
+                    >
+                      <option value="atomic">
+                        Conferir + debitar juntos (atômico)
+                      </option>
+                      <option value="unsafe">
+                        Conferir antes, debitar depois (inseguro)
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    Quem entra primeiro no empate?
+                    <select
+                      value={config.firstOrigin}
+                      disabled={config.origin !== "both"}
+                      onChange={(e) =>
+                        change(
+                          "firstOrigin",
+                          e.target.value as ConcurrencyConfig["firstOrigin"],
+                        )
+                      }
+                    >
+                      <option value="front">PC primeiro</option>
+                      <option value="app">Celular primeiro</option>
+                    </select>
+                  </label>
+                  <p className="con-control-note">
+                    Neste cenário, cada pedido sempre é reservado atomicamente.
+                    O controle acima protege o saldo da conta, uma operação
+                    diferente.
+                  </p>
+                </>
+              ) : (
+                <div
+                  className="con-mode"
+                  role="group"
+                  aria-label="Tipo de reserva"
+                >
+                  <button
+                    aria-pressed={config.mode === "unsafe"}
+                    onClick={() => change("mode", "unsafe")}
+                  >
+                    <ScanLine size={14} />
+                    Sem proteção
+                  </button>
+                  <button
+                    aria-pressed={config.mode === "atomic"}
+                    onClick={() => change("mode", "atomic")}
+                  >
+                    <LockKeyhole size={14} />
+                    Atômica
+                  </button>
+                </div>
+              )}
+              <label>
+                Workers ativos
+                <select
+                  value={config.workers}
+                  onChange={(e) => change("workers", Number(e.target.value))}
+                >
+                  <option value={1}>1 worker</option>
+                  <option value={2}>2 workers</option>
+                </select>
+              </label>
+              <label>
+                Origem da solicitação
+                <select
+                  value={config.origin}
+                  onChange={(e) =>
+                    change(
+                      "origin",
+                      e.target.value as ConcurrencyConfig["origin"],
+                    )
+                  }
+                >
+                  <option value="front">Frontend web</option>
+                  <option value="app">App móvel</option>
+                  {balanceMode && (
+                    <option value="both">PC + celular simultâneos</option>
+                  )}
+                </select>
+              </label>
+              {!balanceMode && (
+                <label>
+                  Pedidos enviados à API
+                  <select
+                    value={config.jobs}
+                    onChange={(e) => change("jobs", Number(e.target.value))}
+                  >
+                    {[1, 2, 3, 4].map((n) => (
+                      <option key={n} value={n}>
+                        {n} pedido{n > 1 ? "s" : ""} de R$ 100
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="con-delay">
+                Atraso do worker B <b>{config.delayB} ms</b>
+                <input
+                  type="range"
+                  aria-label="Atraso do worker B"
+                  min={0}
+                  max={2000}
+                  step={100}
+                  disabled={config.workers === 1}
+                  value={config.delayB}
+                  onChange={(e) => change("delayB", Number(e.target.value))}
+                />
+                <small>
+                  {balanceMode
+                    ? "No modo inseguro, os dois podem ler o mesmo saldo se o atraso for menor que 800 ms."
+                    : "Menos de 1.200 ms permite a leitura antiga no modo inseguro."}
+                </small>
+              </label>
+              <label className="con-toggle">
+                <input
+                  type="checkbox"
+                  checked={config.idempotent}
+                  onChange={(e) => change("idempotent", e.target.checked)}
+                />
+                <span>
+                  <ShieldCheck size={15} />
+                  Efeito idempotente
+                  <small>Chave única por pedido, mesmo ao reprocessar.</small>
+                </span>
+              </label>
+            </div>
+          </details>
           <div className="con-workers">
             {snap.workers.map((w) => (
               <div key={w.id}>

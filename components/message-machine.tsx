@@ -163,7 +163,7 @@ function Range({
 }
 export function MessageMachine({ art }: { art: ReactNode }) {
   const [config, setConfig] = useState<Config>(defaults),
-    [running, setRunning] = useState(true),
+    [running, setRunning] = useState(false),
     [topic, setTopic] = useState<Topic>("queue"),
     [tab, setTab] = useState("Flow"),
     [snap, setSnap] = useState(() => ({
@@ -473,7 +473,11 @@ export function MessageMachine({ art }: { art: ReactNode }) {
     };
     frame = requestAnimationFrame(tick);
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).matches("input,button,select,textarea"))
+      if (
+        (e.target as HTMLElement).closest(
+          "input,button,select,textarea,summary,a",
+        )
+      )
         return;
       if (e.code === "Space") {
         e.preventDefault();
@@ -532,7 +536,7 @@ export function MessageMachine({ art }: { art: ReactNode }) {
           <span className="demo-badge">AMQP 0-9-1</span>
           <button className="quiet" onClick={() => setHelp(true)}>
             <CircleHelp size={15} />
-            How to explore
+            Como explorar
           </button>
           <button
             className="theme-button"
@@ -550,9 +554,12 @@ export function MessageMachine({ art }: { art: ReactNode }) {
             <span /> A SMALL MACHINE FOR A BIG IDEA
           </div>
           <h1>
-            The message machine<span>.</span>
+            RabbitMQ em movimento<span>.</span>
           </h1>
-          <p>Publish. Route. Queue. Process. See what happens in between.</p>
+          <p>
+            Producer → Exchange → Queue → Consumer. Acompanhe uma mensagem por
+            vez.
+          </p>
         </div>
         <div className="intro-note">
           <Network size={23} />
@@ -800,11 +807,11 @@ export function MessageMachine({ art }: { art: ReactNode }) {
             </div>
           </section>
         </div>
-        <aside className="control-panel">
+        <aside className="control-panel" aria-label="Controles do RabbitMQ">
           <div className="control-title">
             <span>
               <SlidersHorizontal size={17} />
-              Simulation controls
+              Simulação
             </span>
             <button
               aria-label="Reset simulation"
@@ -820,7 +827,7 @@ export function MessageMachine({ art }: { art: ReactNode }) {
               onClick={() => setRunning((v) => !v)}
             >
               {running ? <CirclePause size={17} /> : <CirclePlay size={17} />}{" "}
-              {running ? "Pause" : "Run"} simulation
+              {running ? "Pausar" : "Iniciar simulação"}
             </button>
             <button
               className="step-button"
@@ -842,7 +849,7 @@ export function MessageMachine({ art }: { art: ReactNode }) {
               PUBLISHER
             </div>
             <Range
-              label="Publishing rate"
+              label="Taxa de publicação"
               value={config.rate}
               min={0}
               max={16}
@@ -880,7 +887,7 @@ export function MessageMachine({ art }: { art: ReactNode }) {
               }}
             >
               <Plus size={14} />
-              Publish a burst<span>+10 msgs</span>
+              Publicar lote<span>+10 msgs</span>
             </button>
           </div>
           <div className="control-section">
@@ -889,7 +896,7 @@ export function MessageMachine({ art }: { art: ReactNode }) {
               CONSUMERS
             </div>
             <div className="field-label">
-              <span>Active consumers</span>
+              <span>Consumers ativos</span>
               <div className="stepper">
                 <button
                   aria-label="Remove a consumer"
@@ -935,79 +942,88 @@ export function MessageMachine({ art }: { art: ReactNode }) {
                 </button>
               ))}
             </div>
-            <Range
-              label="Prefetch per consumer"
-              value={config.prefetch}
-              min={1}
-              max={6}
-              onChange={(v) => update("prefetch", v)}
-              hint="Shared work budget across this worker’s queue subscriptions."
-            />
-            <Range
-              label="Processing time"
-              value={config.processing}
-              min={0.5}
-              max={3}
-              step={0.5}
-              suffix=" s"
-              onChange={(v) => update("processing", v)}
-            />
-            <div className="capacity-note">
-              Combined capacity <strong>≈ {capacity.toFixed(1)} msg/s</strong>
-            </div>
+            <details className="rabbit-disclosure consumer-settings">
+              <summary>Prefetch e processamento</summary>
+              <div className="rabbit-disclosure-body">
+                <Range
+                  label="Prefetch per consumer"
+                  value={config.prefetch}
+                  min={1}
+                  max={6}
+                  onChange={(v) => update("prefetch", v)}
+                  hint="Shared work budget across this worker’s queue subscriptions."
+                />
+                <Range
+                  label="Processing time"
+                  value={config.processing}
+                  min={0.5}
+                  max={3}
+                  step={0.5}
+                  suffix=" s"
+                  onChange={(v) => update("processing", v)}
+                />
+                <div className="capacity-note">
+                  Combined capacity{" "}
+                  <strong>≈ {capacity.toFixed(1)} msg/s</strong>
+                </div>
+              </div>
+            </details>
           </div>
-          <div className="control-section failure-section">
-            <div className="section-label">
-              <ShieldAlert size={13} />
-              FAILURE INJECTION
-            </div>
-            <Range
-              label="Failure probability"
-              value={config.failure}
-              min={0}
-              max={100}
-              step={5}
-              suffix="%"
-              onChange={(v) => update("failure", v)}
-            />
-            <button
-              className="failure-button"
-              disabled={snap.failNext}
-              onClick={() => {
-                simulation.current.failNext = true;
-                read();
-              }}
-            >
-              <TriangleAlert size={13} />
-              {snap.failNext ? "Failure armed" : "Fail next delivery"}
-            </button>
-            <div className="toggle-field">
-              <div>
-                <span>Retry on NACK</span>
-                <small>Up to {config.maxRetries} redeliveries</small>
+          <details className="rabbit-disclosure control-section failure-section">
+            <summary>Falhas, retry e dead letter</summary>
+            <div className="rabbit-disclosure-body">
+              <div className="section-label">
+                <ShieldAlert size={13} />
+                FAILURE INJECTION
+              </div>
+              <Range
+                label="Failure probability"
+                value={config.failure}
+                min={0}
+                max={100}
+                step={5}
+                suffix="%"
+                onChange={(v) => update("failure", v)}
+              />
+              <button
+                className="failure-button"
+                disabled={snap.failNext}
+                onClick={() => {
+                  simulation.current.failNext = true;
+                  read();
+                }}
+              >
+                <TriangleAlert size={13} />
+                {snap.failNext ? "Failure armed" : "Fail next delivery"}
+              </button>
+              <div className="toggle-field">
+                <div>
+                  <span>Retry on NACK</span>
+                  <small>Up to {config.maxRetries} redeliveries</small>
+                </div>
+                <button
+                  className="switch"
+                  role="switch"
+                  aria-label="Retry on NACK"
+                  aria-checked={config.retry}
+                  onClick={() => update("retry", !config.retry)}
+                >
+                  <i />
+                </button>
               </div>
               <button
-                className="switch"
-                role="switch"
-                aria-label="Retry on NACK"
-                aria-checked={config.retry}
-                onClick={() => update("retry", !config.retry)}
+                className="text-button"
+                disabled={sourceEmpty}
+                onClick={() => {
+                  publishConfigured(simulation.current, config, 1, true);
+                  setTopic("retry");
+                  read();
+                }}
               >
-                <i />
+                Inject an invalid message <ArrowUpRight size={12} />
               </button>
             </div>
-            <button
-              className="text-button"
-              disabled={sourceEmpty}
-              onClick={() => {
-                publishConfigured(simulation.current, config, 1, true);
-                setTopic("retry");
-                read();
-              }}
-            >
-              Inject an invalid message <ArrowUpRight size={12} />
-            </button>
-          </div>
+          </details>
           <div className="panel-foot">
             <span className="keycap">SPACE</span>pause / resume
             <span className="keycap">R</span>reset
@@ -1020,172 +1036,182 @@ export function MessageMachine({ art }: { art: ReactNode }) {
           messages. Consumers continue draining the queue.
         </div>
       )}
-      <section className="routing-workbench" aria-labelledby="routing-title">
-        <div className="routing-heading">
-          <div>
-            <span className="section-label">
-              <Network size={14} /> ROUTING WORKBENCH
-            </span>
-            <h2 id="routing-title">O que entra. Quem recebe.</h2>
-            <p>Uma cor por tipo. Uma fila por routing key.</p>
-          </div>
-          <button
-            className="outline-button"
-            onClick={() =>
-              setConfig((c) => ({
-                ...c,
-                consumers: 3,
-                subscriptions: [[0], [1], [2]],
-              }))
-            }
-          >
-            Separar por tipo <ArrowRight size={14} />
-          </button>
-        </div>
-        <div className="routing-layout">
-          <div className="producer-mix">
-            <div className="routing-subtitle">
-              01 / MISTURA DO PRODUCER <span>Peso relativo</span>
+      <details className="rabbit-disclosure routing-workbench">
+        <summary>
+          Configurar mensagens, cores e destinos{" "}
+          <span>Producer e consumers</span>
+        </summary>
+        <div className="rabbit-disclosure-body">
+          <div className="routing-heading">
+            <div>
+              <span className="section-label">
+                <Network size={14} /> ROUTING WORKBENCH
+              </span>
+              <h2 id="routing-title">O que entra. Quem recebe.</h2>
+              <p>Uma cor por tipo. Uma fila por routing key.</p>
             </div>
-            {messageTypes.map((t) => {
-              const total = config.weights.reduce((a, b) => a + b, 0);
-              const share = total
-                ? Math.round((config.weights[t.id] / total) * 100)
-                : 0;
-              return (
-                <div className="type-config" key={t.id}>
-                  <label className="color-picker" title={`Cor de ${t.name}`}>
-                    <input
-                      type="color"
-                      aria-label={`Cor de ${t.name}`}
-                      value={config.colors[t.id]}
-                      onChange={(e) =>
-                        update(
-                          "colors",
-                          config.colors.map((v, i) =>
-                            i === t.id ? e.target.value : v,
-                          ),
-                        )
-                      }
-                    />
-                    <span style={{ background: config.colors[t.id] }} />
-                  </label>
-                  <div>
-                    <strong>{t.name}</strong>
-                    <code>{t.key}</code>
-                  </div>
-                  <label className="weight-control">
-                    <input
-                      type="range"
-                      min="0"
-                      max="10"
-                      value={config.weights[t.id]}
-                      aria-label={`Peso de ${t.name}`}
-                      onChange={(e) =>
-                        update(
-                          "weights",
-                          config.weights.map((v, i) =>
-                            i === t.id ? Number(e.target.value) : v,
-                          ),
-                        )
-                      }
-                    />
-                    <span>
-                      {share}% <small>peso {config.weights[t.id]}</small>
-                    </span>
-                  </label>
-                </div>
-              );
-            })}
-            <p className="routing-note">
-              {sourceEmpty
-                ? "Todos os pesos estão zerados. Escolha um tipo ou aumente um peso para publicar."
-                : config.publishType === "mix"
-                  ? "A taxa total é dividida entre os tipos pelos pesos. Peso zero desliga a entrada desse tipo."
-                  : `Publicando apenas ${messageTypes[config.publishType].name}. Selecione a mistura no producer para usar os pesos.`}
-            </p>
+            <button
+              className="outline-button"
+              onClick={() =>
+                setConfig((c) => ({
+                  ...c,
+                  consumers: 3,
+                  subscriptions: [[0], [1], [2]],
+                }))
+              }
+            >
+              Separar por tipo <ArrowRight size={14} />
+            </button>
           </div>
-          <div className="routing-matrix">
-            <div className="routing-subtitle">
-              02 / ASSINATURAS DOS CONSUMERS <span>Marque para receber</span>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Fila / aguardando</th>
-                  {[0, 1, 2].map((i) => (
-                    <th scope="col" key={i}>
-                      C{i + 1}
-                      <small>{i < config.consumers ? "ATIVO" : "OFF"}</small>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {messageTypes.map((t) => (
-                  <tr key={t.id}>
-                    <th scope="row">
-                      <span
-                        className="type-dot"
-                        style={{ background: config.colors[t.id] }}
+          <div className="routing-layout">
+            <div className="producer-mix">
+              <div className="routing-subtitle">
+                01 / MISTURA DO PRODUCER <span>Peso relativo</span>
+              </div>
+              {messageTypes.map((t) => {
+                const total = config.weights.reduce((a, b) => a + b, 0);
+                const share = total
+                  ? Math.round((config.weights[t.id] / total) * 100)
+                  : 0;
+                return (
+                  <div className="type-config" key={t.id}>
+                    <label className="color-picker" title={`Cor de ${t.name}`}>
+                      <input
+                        type="color"
+                        aria-label={`Cor de ${t.name}`}
+                        value={config.colors[t.id]}
+                        onChange={(e) =>
+                          update(
+                            "colors",
+                            config.colors.map((v, i) =>
+                              i === t.id ? e.target.value : v,
+                            ),
+                          )
+                        }
+                      />
+                      <span style={{ background: config.colors[t.id] }} />
+                    </label>
+                    <div>
+                      <strong>{t.name}</strong>
+                      <code>{t.key}</code>
+                    </div>
+                    <label className="weight-control">
+                      <input
+                        type="range"
+                        min="0"
+                        max="10"
+                        value={config.weights[t.id]}
+                        aria-label={`Peso de ${t.name}`}
+                        onChange={(e) =>
+                          update(
+                            "weights",
+                            config.weights.map((v, i) =>
+                              i === t.id ? Number(e.target.value) : v,
+                            ),
+                          )
+                        }
                       />
                       <span>
-                        {t.name}
-                        <code>{t.queue}</code>
+                        {share}% <small>peso {config.weights[t.id]}</small>
                       </span>
-                      <b>{snap.queues[t.id]}</b>
-                    </th>
+                    </label>
+                  </div>
+                );
+              })}
+              <p className="routing-note">
+                {sourceEmpty
+                  ? "Todos os pesos estão zerados. Escolha um tipo ou aumente um peso para publicar."
+                  : config.publishType === "mix"
+                    ? "A taxa total é dividida entre os tipos pelos pesos. Peso zero desliga a entrada desse tipo."
+                    : `Publicando apenas ${messageTypes[config.publishType].name}. Selecione a mistura no producer para usar os pesos.`}
+              </p>
+            </div>
+            <div className="routing-matrix">
+              <div className="routing-subtitle">
+                02 / ASSINATURAS DOS CONSUMERS <span>Marque para receber</span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Fila / aguardando</th>
                     {[0, 1, 2].map((i) => (
-                      <td
-                        key={i}
-                        className={i >= config.consumers ? "consumer-off" : ""}
-                      >
-                        <label
-                          title={`${t.name} → C${i + 1}${i >= config.consumers ? " (consumer desligado)" : ""}`}
-                        >
-                          <input
-                            type="checkbox"
-                            aria-label={`C${i + 1} recebe ${t.name}`}
-                            checked={config.subscriptions[i].includes(t.id)}
-                            onChange={() =>
-                              update(
-                                "subscriptions",
-                                config.subscriptions.map((types, j) =>
-                                  j !== i
-                                    ? types
-                                    : types.includes(t.id)
-                                      ? types.filter((v) => v !== t.id)
-                                      : [...types, t.id],
-                                ),
-                              )
-                            }
-                          />
-                          <span
-                            className="routing-check"
-                            style={
-                              {
-                                "--type-color": config.colors[t.id],
-                              } as React.CSSProperties
-                            }
-                          >
-                            <Check size={14} />
-                          </span>
-                          <small>{snap.typeLoads[i][t.id]} em voo</small>
-                        </label>
-                      </td>
+                      <th scope="col" key={i}>
+                        C{i + 1}
+                        <small>{i < config.consumers ? "ATIVO" : "OFF"}</small>
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className={`routing-note ${waitingTypes.length ? "warn" : ""}`}>
-              {waitingTypes.length
-                ? `${waitingTypes.map((t) => t.name).join(", ")}: aguardando um consumer ativo com essa assinatura.`
-                : "Consumers com a mesma assinatura competem pela fila. Cada mensagem vai a um deles; alterações valem para novas entregas."}
-            </p>
+                </thead>
+                <tbody>
+                  {messageTypes.map((t) => (
+                    <tr key={t.id}>
+                      <th scope="row">
+                        <span
+                          className="type-dot"
+                          style={{ background: config.colors[t.id] }}
+                        />
+                        <span>
+                          {t.name}
+                          <code>{t.queue}</code>
+                        </span>
+                        <b>{snap.queues[t.id]}</b>
+                      </th>
+                      {[0, 1, 2].map((i) => (
+                        <td
+                          key={i}
+                          className={
+                            i >= config.consumers ? "consumer-off" : ""
+                          }
+                        >
+                          <label
+                            title={`${t.name} → C${i + 1}${i >= config.consumers ? " (consumer desligado)" : ""}`}
+                          >
+                            <input
+                              type="checkbox"
+                              aria-label={`C${i + 1} recebe ${t.name}`}
+                              checked={config.subscriptions[i].includes(t.id)}
+                              onChange={() =>
+                                update(
+                                  "subscriptions",
+                                  config.subscriptions.map((types, j) =>
+                                    j !== i
+                                      ? types
+                                      : types.includes(t.id)
+                                        ? types.filter((v) => v !== t.id)
+                                        : [...types, t.id],
+                                  ),
+                                )
+                              }
+                            />
+                            <span
+                              className="routing-check"
+                              style={
+                                {
+                                  "--type-color": config.colors[t.id],
+                                } as React.CSSProperties
+                              }
+                            >
+                              <Check size={14} />
+                            </span>
+                            <small>{snap.typeLoads[i][t.id]} em voo</small>
+                          </label>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p
+                className={`routing-note ${waitingTypes.length ? "warn" : ""}`}
+              >
+                {waitingTypes.length
+                  ? `${waitingTypes.map((t) => t.name).join(", ")}: aguardando um consumer ativo com essa assinatura.`
+                  : "Consumers com a mesma assinatura competem pela fila. Cada mensagem vai a um deles; alterações valem para novas entregas."}
+              </p>
+            </div>
           </div>
         </div>
-      </section>
+      </details>
       <div className="lower-grid">
         <section className="explanation">
           <div className="explanation-top">
@@ -1243,38 +1269,45 @@ export function MessageMachine({ art }: { art: ReactNode }) {
             </div>
           </div>
         </section>
-        <section className="event-log">
-          <div className="event-heading">
-            <span>
-              <Terminal size={14} />
-              EVENT TRACE
-            </span>
-            <span className="trace-live">
-              <i />
-              LIVE
-            </span>
+        <details className="rabbit-disclosure event-log">
+          <summary>
+            Histórico de eventos <span>{snap.events.length} recentes</span>
+          </summary>
+          <div className="rabbit-disclosure-body">
+            <div className="event-heading">
+              <span>
+                <Terminal size={14} />
+                EVENT TRACE
+              </span>
+              <span className="trace-live">
+                <i />
+                LIVE
+              </span>
+            </div>
+            <div className="events">
+              {snap.events.length ? (
+                snap.events.map((e) => (
+                  <div className="event" key={e.id}>
+                    <span className="event-time">
+                      {e.at.toFixed(1).padStart(5, "0")}s
+                    </span>
+                    <span className={`event-kind ${e.kind.toLowerCase()}`}>
+                      {e.kind}
+                    </span>
+                    <span>{e.text}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="empty-log">
+                  Publish a message to begin the trace.
+                </p>
+              )}
+            </div>
+            <div className="trace-foot">
+              Each cartridge is a message. Each signal is a decision.
+            </div>
           </div>
-          <div className="events">
-            {snap.events.length ? (
-              snap.events.map((e) => (
-                <div className="event" key={e.id}>
-                  <span className="event-time">
-                    {e.at.toFixed(1).padStart(5, "0")}s
-                  </span>
-                  <span className={`event-kind ${e.kind.toLowerCase()}`}>
-                    {e.kind}
-                  </span>
-                  <span>{e.text}</span>
-                </div>
-              ))
-            ) : (
-              <p className="empty-log">Publish a message to begin the trace.</p>
-            )}
-          </div>
-          <div className="trace-foot">
-            Each cartridge is a message. Each signal is a decision.
-          </div>
-        </section>
+        </details>
       </div>
       <footer className="page-footer">
         <span>Built to explain. Designed to explore.</span>

@@ -1,0 +1,320 @@
+/* Keep the machine and its playback controls together; reveal detail on demand. */
+.rabbit-lab .workspace {
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: start;
+}
+.rabbit-lab .intro {
+  padding: 28px 0;
+}
+.rabbit-lab .intro h1 {
+  font-size: clamp(30px, 3vw, 42px);
+}
+.rabbit-lab .intro-note,
+.rabbit-lab .coordinate {
+  display: none;
+}
+.rabbit-lab .grid-dots {
+  opacity: 0.15;
+}
+.rabbit-lab .control-panel {
+  position: sticky;
+  top: 18px;
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.rabbit-lab .play-button {
+  min-height: 42px;
+  font-size: 12px;
+}
+.rabbit-lab .panel-foot {
+  font-size: 9px;
+}
+.rabbit-lab .rabbit-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--soft);
+  font-size: 12px;
+  min-height: 28px;
+}
+.rabbit-lab .rabbit-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.rabbit-lab .rabbit-disclosure > summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--accent);
+  font: 18px var(--font-mono, monospace);
+}
+.rabbit-lab .rabbit-disclosure[open] > summary::after {
+  content: "−";
+}
+.rabbit-lab .rabbit-disclosure > summary > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.rabbit-lab .rabbit-disclosure > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+  border-radius: 3px;
+}
+.rabbit-lab .consumer-settings {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.rabbit-lab .consumer-settings > summary,
+.rabbit-lab .failure-section > summary {
+  font-size: 11px;
+}
+.rabbit-lab .rabbit-disclosure[open] > .rabbit-disclosure-body {
+  padding-top: 18px;
+}
+.rabbit-lab .routing-workbench {
+  margin-top: 22px;
+  padding: 18px 22px;
+}
+.rabbit-lab .lower-grid {
+  align-items: start;
+}
+.rabbit-lab .event-log > summary {
+  padding: 18px;
+}
+.rabbit-lab .event-log[open] > .rabbit-disclosure-body {
+  padding-top: 0;
+}
+.rabbit-lab .explanation-top {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.con-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: start;
+}
+.con-workspace > .con-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 0;
+  position: sticky;
+  top: 18px;
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  min-width: 0;
+}
+.con-controls .con-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  margin: 0;
+}
+.con-controls .con-actions > .hub-primary,
+.con-controls .con-actions > button:last-child {
+  grid-column: 1 / -1;
+}
+.con-controls .con-actions > .hub-primary {
+  min-height: 44px;
+  font-size: 12px;
+}
+.con-workspace .con-controls > p {
+  margin: 0;
+}
+.con-controls .con-notice:empty {
+  display: none;
+}
+.con-workspace .con-controls > .con-start-hint {
+  color: var(--hub-soft);
+}
+.con-controls .con-workers {
+  grid-template-columns: 1fr;
+}
+.con-settings > summary,
+.con-worker-stream > summary {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  cursor: pointer;
+  color: var(--hub-soft);
+  font-size: 11px;
+  list-style: none;
+  min-height: 32px;
+}
+.con-settings > summary::-webkit-details-marker,
+.con-worker-stream > summary::-webkit-details-marker {
+  display: none;
+}
+.con-settings > summary::after,
+.con-worker-stream > summary::after {
+  content: "+";
+  color: var(--con-accent);
+  margin-left: auto;
+  font: 18px var(--hub-mono);
+}
+.con-settings[open] > summary::after,
+.con-worker-stream[open] > summary::after {
+  content: "−";
+}
+.con-settings > summary:focus-visible,
+.con-worker-stream > summary:focus-visible {
+  outline: 2px solid var(--con-accent);
+  outline-offset: 4px;
+}
+.con-settings {
+  padding-top: 12px;
+  border-top: 1px solid var(--hub-border);
+}
+.con-settings-fields > label {
+  display: block;
+  font-size: 11px;
+  color: var(--hub-soft);
+  margin-top: 16px;
+}
+.con-settings-fields > p {
+  color: var(--hub-muted);
+  font-size: 10px;
+  line-height: 1.6;
+  margin: 12px 0;
+}
+.con-settings-fields > .con-mode {
+  margin-top: 16px;
+}
+.con-settings-fields > label.con-toggle {
+  margin-top: 16px;
+}
+.con-worker-stream[open] > header {
+  margin-top: 18px;
+}
+.con-stations {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 6px;
+}
+.con-stations button {
+  flex: 0 0 auto;
+  border-color: transparent;
+  background: transparent;
+  padding: 10px 9px;
+}
+.con-stations strong {
+  font-size: 9px;
+  color: var(--hub-muted);
+}
+.con-stations button[aria-pressed="true"] strong {
+  color: var(--con-accent);
+}
+.con-current {
+  margin-bottom: 18px;
+}
+.con-account header {
+  gap: 12px;
+}
+
+@media (max-width: 1000px) {
+  .con-workspace {
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 16px;
+  }
+  .rabbit-lab .workspace {
+    grid-template-columns: minmax(0, 1fr) 270px;
+    gap: 16px;
+  }
+}
+@media (max-width: 820px) {
+  .rabbit-lab .workspace,
+  .con-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+  .rabbit-lab .left-column,
+  .con-machine-column {
+    width: 100%;
+  }
+  .rabbit-lab .control-panel,
+  .con-workspace > .con-controls {
+    order: -1;
+    position: static;
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+  }
+  .rabbit-lab .control-panel {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .rabbit-lab .control-title {
+    grid-column: 1;
+    padding: 16px 12px;
+  }
+  .rabbit-lab .playback {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 10px 12px 10px 0;
+  }
+  .rabbit-lab .play-button {
+    padding: 8px;
+    font-size: 10px;
+  }
+  .rabbit-lab .control-section {
+    display: block;
+    padding: 14px 12px;
+    min-width: 0;
+    border-right: 0;
+    grid-column: auto;
+  }
+  .rabbit-lab .failure-section,
+  .rabbit-lab .panel-foot {
+    grid-column: 1 / -1;
+  }
+  .rabbit-lab .routing-workbench > summary {
+    flex-wrap: wrap;
+  }
+  .rabbit-lab .routing-workbench > summary > span {
+    display: none;
+  }
+  .con-workspace > .con-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .con-controls .con-panel-title {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .con-controls .con-actions {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: start;
+  }
+  .con-workspace .con-controls > p,
+  .con-controls .con-workers {
+    grid-column: 1 / -1;
+  }
+  .con-workspace .con-controls > .con-notice,
+  .con-workspace .con-controls > p:first-of-type {
+    grid-column: 1;
+  }
+  .con-controls .con-mode {
+    grid-column: 1 / -1;
+  }
+  .con-controls .con-settings {
+    grid-column: 1 / -1;
+  }
+  .con-settings-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .con-settings-fields > p,
+  .con-settings-fields > .con-mode,
+  .con-settings-fields > .con-delay,
+  .con-settings-fields > .con-toggle {
+    grid-column: 1 / -1;
+  }
+}
