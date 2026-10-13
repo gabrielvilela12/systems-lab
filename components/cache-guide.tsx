@@ -22,6 +22,13 @@ export function CacheGuide() {
           <span className="cache-guide-number">EXPERIMENTO / SOBRECARGA</span>
           <h3>Por que o banco fica esperando?</h3>
           <p>
+            A cor do banco passa de neutra a laranja e vermelho conforme cresce
+            a pressão: vagas ocupadas, pedidos aguardando e tempo de espera. É
+            um indicador didático, não uma medição de CPU. Os pedidos ainda sem
+            resposta são destacados após 2 segundos, com vermelho após 4
+            segundos. Quando a resposta chega, o cronômetro para no tempo total.
+          </p>
+          <p>
             Cada consulta ocupa uma vaga por um tempo. Com 2 vagas e 2 segundos
             por SELECT, esta simulação atende aproximadamente 1 leitura por
             segundo no banco. Se entram 10 por segundo sem cache, a espera

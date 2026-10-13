@@ -13,11 +13,74 @@ import {
   CACHE_REQUEST_LIMIT,
 } from "./cache-model";
 import type { CacheState, ProductKey } from "./cache-model";
+import {
+  databasePressure,
+  responseElapsed,
+  responseSeverity,
+  slowPendingRequests,
+} from "./cache-observability";
 function read(s: CacheState, key: ProductKey = "produto:1") {
   requestCache(s, key);
   advanceCache(s, 2700);
   return s.requests.at(-1)!;
 }
+test("visual database pressure grows with queued work and clears after draining", () => {
+  const s = createCacheState({
+    enabled: false,
+    dbConcurrency: 1,
+    dbLatency: 4000,
+  });
+  requestCache(s, "produto:1");
+  advanceCache(s, 350);
+  const mild = databasePressure(s);
+  assert.equal(mild.label, "Normal");
+  requestCache(s, "produto:1", "web", 2);
+  advanceCache(s, 350);
+  const loaded = databasePressure(s);
+  assert.equal(loaded.label, "Sob carga");
+  assert.ok(loaded.score > mild.score);
+  requestCache(s, "produto:1", "web", 6);
+  advanceCache(s, 2000);
+  const critical = databasePressure(s);
+  assert.equal(critical.label, "Crítico");
+  assert.ok(critical.score > loaded.score);
+  advanceCache(s, 50000);
+  assert.equal(databasePressure(s).score, 0);
+  assert.equal(slowPendingRequests(s).length, 0);
+});
+test("response clocks grow only while pending and completed times never keep aging", () => {
+  const s = createCacheState();
+  requestCache(s, "produto:1");
+  const r = s.requests[0];
+  advanceCache(s, 1999);
+  assert.equal(responseSeverity(r, s.now), "normal");
+  advanceCache(s, 1);
+  assert.equal(responseSeverity(r, s.now), "slow");
+  advanceCache(s, 700);
+  assert.equal(responseElapsed(r, s.now), 2700);
+  advanceCache(s, 20000);
+  assert.equal(responseElapsed(r, s.now), 2700);
+  assert.equal(responseSeverity(r, s.now), "slow");
+});
+test("slow pending reads are ordered oldest first without losing them to recent hits", () => {
+  const s = createCacheState({
+    enabled: false,
+    dbConcurrency: 1,
+    dbLatency: 4000,
+  });
+  requestCache(s, "produto:1", "web", 3);
+  advanceCache(s, 3000);
+  requestCache(s, "produto:2", "web", 6);
+  const pending = slowPendingRequests(s);
+  assert.deepEqual(
+    pending.map((r) => r.id),
+    [1, 2, 3],
+  );
+  advanceCache(s, 2000);
+  assert.equal(s.requests[0].phase, "done");
+  assert.equal(slowPendingRequests(s)[0].id, 2);
+  assert.equal(responseSeverity(s.requests[1], s.now), "critical");
+});
 test("cold read goes through DB and SET; warm read avoids the DB", () => {
   const s = createCacheState();
   const first = read(s);
@@ -29,6 +92,17 @@ test("cold read goes through DB and SET; warm read avoids the DB", () => {
   assert.equal(second.endedAt! - second.startedAt, 950);
   assert.equal(s.metrics.dbReads, 1);
   assert.equal(s.entries[0].expiresAt, expiry);
+});
+test("high traffic retains recent completed hits despite many newer requests", () => {
+  const s = createCacheState({ requestRate: 50, ttl: 30000 });
+  requestCache(s, "produto:1");
+  advanceCache(s, 2700);
+  setCacheTraffic(s, true);
+  advanceCache(s, 10000);
+  const done = s.requests.filter((r) => r.phase === "done");
+  assert.equal(done.length, 40);
+  assert.ok(done.every((r) => r.source === "cache"));
+  assert.ok(s.requests.length <= CACHE_REQUEST_LIMIT + 40);
 });
 test("TTL begins at SET, expires at its boundary and is not renewed by a hit", () => {
   const s = createCacheState({ ttl: 1000 });

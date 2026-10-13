@@ -211,8 +211,16 @@ export function requestCache(
       `#${id} ${count > 1 && i % 2 ? "Celular" : origin === "web" ? "PC" : "Celular"}: GET /produtos/${key.split(":")[1]}.`,
     );
   }
+  // Retain history by completion time so high traffic cannot hide every fast hit.
+  const recentCompleted = new Set(
+    s.requests
+      .filter((r) => r.phase === "done")
+      .sort((a, b) => b.endedAt! - a.endedAt! || b.id - a.id)
+      .slice(0, 40)
+      .map((r) => r.id),
+  );
   s.requests = s.requests.filter(
-    (r) => r.phase !== "done" || r.id > s.nextId - 40,
+    (r) => r.phase !== "done" || recentCompleted.has(r.id),
   );
   return n;
 }

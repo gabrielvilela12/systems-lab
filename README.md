@@ -26,6 +26,8 @@ Compare também a primeira leitura com uma leitura aquecida, altere o preço no 
 
 Clique nas peças para abrir um painel com as chaves, os TTLs, as versões no banco, as consultas em execução e os pedidos esperando vaga. Os componentes também podem ser abertos pelos botões e pelo teclado. O [guia de Cache](https://systems-lab-gabriel.vercel.app/labs/cache/#guia) explica quando usar cada estratégia, seus ganhos e suas limitações. Os tempos são didáticos; a coalescência representa uma única instância de API.
 
+O banco passa de neutro a laranja e vermelho conforme aumenta a pressão de consultas e a espera. Os três pedidos pendentes mais demorados aparecem com cronômetros ao lado da máquina; a tabela mantém pendentes lentos e respostas recentes juntos. O destaque começa em 2 segundos e fica vermelho em 4 segundos. No celular, a bancada inteira aparece primeiro e o botão Ampliar permite explorar as peças.
+
 ![Bancada isométrica de cache com cliente, API, gavetas, banco e estação SET](docs/images/cache-machine.png)
 
 ## Dois pedidos, uma conta com R$ 100
@@ -90,7 +92,7 @@ npm run typecheck
 npm test
 ```
 
-A versão atual tem **73 testes** dos modelos, incluindo limites de prefetch, retries, falhas de HTTP, sessões de conexão, reserva concorrente, conservação do saldo, idempotência, TTL, invalidação, LRU, coalescência, tráfego automático, sobrecarga do banco e consistência entre diferentes passos de tempo.
+A versão atual tem **77 testes** dos modelos, incluindo limites de prefetch, retries, falhas de HTTP, sessões de conexão, reserva concorrente, conservação do saldo, idempotência, TTL, invalidação, LRU, coalescência, tráfego automático, sobrecarga do banco, destaque de pedidos lentos e consistência entre diferentes passos de tempo.
 
 As auditorias das figuras verificam suporte das peças, interseções e ordem de desenho:
 

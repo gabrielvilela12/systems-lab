@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type CSSProperties,
+} from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -32,8 +38,15 @@ import {
   type CacheOrigin,
   type CachePhase,
   type CacheState,
+  type CacheRequest,
   type ProductKey,
 } from "../lib/cache-model";
+import {
+  databasePressure,
+  responseElapsed,
+  responseSeverity,
+  slowPendingRequests,
+} from "../lib/cache-observability";
 import {
   CACHE_WIDTH,
   CACHE_HEIGHT,
@@ -149,6 +162,36 @@ const presets = [
 ];
 const money = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const duration = (ms: number) =>
+  ms < 1000
+    ? `${Math.round(ms)} ms`
+    : `${(ms / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
+function ResponseTime({
+  request,
+  now,
+}: {
+  request: CacheRequest;
+  now: number;
+}) {
+  const severity = responseSeverity(request, now);
+  return (
+    <span
+      className="cache-response-time"
+      data-severity={severity}
+      aria-live="off"
+    >
+      <strong>{duration(responseElapsed(request, now))}</strong>
+      <small>
+        {request.phase === "done" ? "tempo total" : "sem resposta"}
+        {severity === "critical"
+          ? " · muito lento"
+          : severity === "slow"
+            ? " · lento"
+            : ""}
+      </small>
+    </span>
+  );
+}
 function Range({
   label,
   value,
@@ -275,6 +318,7 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
   }
   const [selected, setSelected] = useState<number | null>(null),
     [light, setLight] = useState(false);
+  const [zoom, setZoom] = useState(false);
   const stage = useRef<HTMLDivElement>(null),
     packetGroup = useRef<SVGGElement>(null);
   const drawRef = useRef<() => void>(() => {}),
@@ -541,6 +585,22 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
   const remainingCapacity = active.length < CACHE_REQUEST_LIMIT;
   const dbBusy = active.filter((r) => r.phase === "db");
   const dbWaiting = active.filter((r) => r.phase === "db-wait");
+  const pressure = databasePressure(snap);
+  const slowPending = slowPendingRequests(snap);
+  const priority = slowPending.slice(0, 8);
+  const priorityIds = new Set(priority.map((r) => r.id));
+  const recentResponses = [...snap.requests]
+    .filter((r) => r.phase === "done")
+    .sort((a, b) => b.endedAt! - a.endedAt! || b.id - a.id)
+    .slice(0, 4);
+  const responseIds = new Set(recentResponses.map((r) => r.id));
+  const visibleRequests = [
+    ...priority,
+    ...recentResponses,
+    ...[...snap.requests]
+      .reverse()
+      .filter((r) => !priorityIds.has(r.id) && !responseIds.has(r.id)),
+  ].slice(0, 12);
   return (
     <main className="hub-shell cache-lab">
       <HubNav active="cache" />
@@ -588,11 +648,29 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
           <div
             className="cache-figure iso"
             data-theme={light ? "light" : "dark"}
+            data-zoom={zoom}
+            data-pressure={pressure.label}
+            style={
+              {
+                "--db-warm": `${Math.min(1, pressure.score * 2) * 100}%`,
+                "--db-hot": `${Math.max(0, (pressure.score - 0.5) * 2) * 100}%`,
+              } as CSSProperties
+            }
           >
             <div className="iso-plate" ref={stage}>
               <div className="cache-figure-top">
                 <span>FIG 04 · CACHE-ASIDE</span>
-                <button onClick={() => setLight((v) => !v)}>
+                <button
+                  className="cache-zoom-button"
+                  aria-pressed={zoom}
+                  onClick={() => setZoom((v) => !v)}
+                >
+                  {zoom ? "Ver tudo" : "Ampliar"}
+                </button>
+                <button
+                  aria-label="Alternar tema da figura"
+                  onClick={() => setLight((v) => !v)}
+                >
                   {light ? "Tema escuro" : "Tema claro"}
                 </button>
               </div>
@@ -600,6 +678,21 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
                 className="cache-load-meter"
                 data-overloaded={dbWaiting.length > 0}
               >
+                <div
+                  className="cache-db-pressure"
+                  title="A cor considera vagas ocupadas, quantidade de pedidos esperando e tempo de espera. É um indicador visual da simulação."
+                >
+                  <span>
+                    PRESSÃO NO BANCO <b>{pressure.label}</b>
+                  </span>
+                  <div
+                    className="cache-pressure-track"
+                    role="img"
+                    aria-label={`Pressão no banco: ${pressure.label}`}
+                  >
+                    <i style={{ width: `${pressure.score * 100}%` }} />
+                  </div>
+                </div>
                 <div>
                   <span>ENTRADA CONFIGURADA</span>
                   <b>
@@ -631,6 +724,39 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
                       : "Redis indisponível: usando o banco."
                     : "Redis desligado: todas as leituras vão ao banco."}
                 </p>
+              </div>
+              <div className="cache-slow-requests">
+                <header>
+                  <b>Ainda sem resposta</b>
+                  <span>{slowPending.length} lento(s) · destaque após 2 s</span>
+                </header>
+                {slowPending.length ? (
+                  <div className="cache-slow-cards">
+                    {slowPending.slice(0, 3).map((r) => (
+                      <button
+                        key={r.id}
+                        data-severity={responseSeverity(r, snap.now)}
+                        aria-pressed={selected === r.id}
+                        onClick={() => setSelected(r.id)}
+                      >
+                        <span>
+                          #{r.id} · {r.origin === "web" ? "PC" : "Celular"} ·{" "}
+                          {r.key}
+                        </span>
+                        <ResponseTime request={r} now={snap.now} />
+                        <small>
+                          {r.phase === "db-wait"
+                            ? "Esperando vaga no banco"
+                            : r.phase === "db"
+                              ? "Banco executando SELECT"
+                              : phases[r.phase].title}
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p>Nenhum pedido ultrapassou 2 segundos sem resposta.</p>
+                )}
               </div>
               <div
                 className="cache-svg-wrap"
@@ -710,6 +836,7 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
           <div className="cache-now" aria-live="polite">
             <span>{focused ? `PEDIDO #${focused.id}` : "COMECE AQUI"}</span>
             <h2>{current?.title ?? "Envie um pedido para aquecer o cache."}</h2>
+            {focused && <ResponseTime request={focused} now={snap.now} />}
             <p>
               {current?.text ??
                 "O banco já tem quatro produtos. O cache está vazio: a primeira leitura será um miss."}
@@ -1179,6 +1306,7 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
                       <b>
                         #{r.id} · {r.key}
                       </b>
+                      <ResponseTime request={r} now={snap.now} />
                       <span>
                         {r.phase === "db"
                           ? `SELECT em execução · snapshot v${r.value?.version}`
@@ -1252,61 +1380,64 @@ export function CacheLab({ art, guide }: { art: ReactNode; guide: ReactNode }) {
             <h2>Pedidos e respostas</h2>
             <span>{active.length} EM ANDAMENTO</span>
           </div>
+          <p className="cache-request-hint">
+            Pendentes lentos aparecem primeiro, junto das respostas recentes. O
+            tempo cresce até a resposta chegar.
+          </p>
           <div className="cache-table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Pedido</th>
+                  <th>Tempo</th>
                   <th>Chave</th>
                   <th>Etapa / origem</th>
                   <th>Resposta</th>
-                  <th>Tempo</th>
                 </tr>
               </thead>
               <tbody>
-                {[...snap.requests]
-                  .reverse()
-                  .slice(0, 12)
-                  .map((r) => (
-                    <tr key={r.id}>
-                      <td>
-                        <button
-                          aria-pressed={selected === r.id}
-                          onClick={() => setSelected(r.id)}
-                          className={
-                            r.origin === "web" ? "cache-web" : "cache-mobile"
-                          }
-                        >
-                          #{r.id} · {r.origin === "web" ? "PC" : "Celular"}
-                        </button>
-                      </td>
-                      <td>{r.key}</td>
-                      <td>
-                        {r.phase === "done"
-                          ? r.source === "cache"
-                            ? "HIT / cache"
-                            : r.source === "shared"
-                              ? "Compartilhada"
-                              : "Banco"
-                          : phases[r.phase].title}
-                      </td>
-                      <td>
-                        {r.phase === "done" ? (
-                          <span className={r.stale ? "cache-stale" : ""}>
-                            {money(r.value!.price)} · v{r.value!.version}
-                            {r.stale ? " · antigo" : ""}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td>
-                        {r.endedAt !== null
-                          ? `${Math.round(r.endedAt - r.startedAt)} ms`
-                          : "em curso"}
-                      </td>
-                    </tr>
-                  ))}
+                {visibleRequests.map((r) => (
+                  <tr
+                    key={r.id}
+                    data-request-id={r.id}
+                    data-severity={responseSeverity(r, snap.now)}
+                  >
+                    <td>
+                      <button
+                        aria-pressed={selected === r.id}
+                        onClick={() => setSelected(r.id)}
+                        className={
+                          r.origin === "web" ? "cache-web" : "cache-mobile"
+                        }
+                      >
+                        #{r.id} · {r.origin === "web" ? "PC" : "Celular"}
+                      </button>
+                    </td>
+                    <td className="cache-time-cell">
+                      <ResponseTime request={r} now={snap.now} />
+                    </td>
+                    <td>{r.key}</td>
+                    <td>
+                      {r.phase === "done"
+                        ? r.source === "cache"
+                          ? "HIT / cache"
+                          : r.source === "shared"
+                            ? "Compartilhada"
+                            : "Banco"
+                        : phases[r.phase].title}
+                    </td>
+                    <td>
+                      {r.phase === "done" ? (
+                        <span className={r.stale ? "cache-stale" : ""}>
+                          {money(r.value!.price)} · v{r.value!.version}
+                          {r.stale ? " · antigo" : ""}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
             {!snap.requests.length ? (
