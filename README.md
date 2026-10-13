@@ -4,7 +4,7 @@ Um hub interativo para estudar backend: transformar um clique em uma requisiçã
 
 Construído com **Next.js, TypeScript, React e SVG isométrico animado**. Os laboratórios permitem alterar parâmetros, avançar uma ação por vez e inspecionar os dados dentro de cada componente.
 
-**[Abrir a demonstração](https://rabbitmq-message-machine.impressoragk.chatgpt.site/)** · **[Experimentar concorrência](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/concurrency/)**
+**[Abrir a demonstração](https://systems-lab-gabriel.vercel.app/)** · **[Experimentar concorrência](https://systems-lab-gabriel.vercel.app/labs/concurrency/)**
 
 ![Máquina isométrica de concorrência com celular, PC, API, banco, workers e processamento](docs/images/concurrency-machine.png)
 
@@ -12,10 +12,10 @@ Construído com **Next.js, TypeScript, React e SVG isométrico animado**. Os lab
 
 | Laboratório | Conceitos e experimentos |
 | --- | --- |
-| [Conexões](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/connections/) | Do evento no frontend ao JSON, HTTP, rota no backend e resposta. Compare HTTP, polling, SSE, WebSocket e webhook, com exemplos de quando usar cada um. |
-| [HTTP](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/http/) | GET, POST, PUT e DELETE; corpo, headers, status, autenticação didática, latência, timeout e falhas. |
-| [RabbitMQ](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/rabbitmq/) | Producer → Exchange → Queue → Consumer; roteamento por tipo, ACK, NACK, retry, dead letter queue, prefetch e múltiplos consumidores. |
-| [Concorrência](https://rabbitmq-message-machine.impressoragk.chatgpt.site/labs/concurrency/) | API → pendência no banco → background → processamento → resultado. Compare reserva atômica, saldo compartilhado e idempotência. |
+| [Conexões](https://systems-lab-gabriel.vercel.app/labs/connections/) | Do evento no frontend ao JSON, HTTP, rota no backend e resposta. Compare HTTP, polling, SSE, WebSocket e webhook, com exemplos de quando usar cada um. |
+| [HTTP](https://systems-lab-gabriel.vercel.app/labs/http/) | GET, POST, PUT e DELETE; corpo, headers, status, autenticação didática, latência, timeout e falhas. |
+| [RabbitMQ](https://systems-lab-gabriel.vercel.app/labs/rabbitmq/) | Producer → Exchange → Queue → Consumer; roteamento por tipo, ACK, NACK, retry, dead letter queue, prefetch e múltiplos consumidores. |
+| [Concorrência](https://systems-lab-gabriel.vercel.app/labs/concurrency/) | API → pendência no banco → background → processamento → resultado. Compare reserva atômica, saldo compartilhado e idempotência. |
 
 ## Dois pedidos, uma conta com R$ 100
 
@@ -67,6 +67,10 @@ npm start
 ```
 
 A prévia fica em [http://127.0.0.1:3001](http://127.0.0.1:3001). O projeto gera uma exportação estática na pasta `out/`.
+
+## Publicação
+
+A demonstração está hospedada na Vercel e conectada a este repositório. Cada push na branch `main` gera uma nova publicação de produção automaticamente.
 
 ## Validação
 
